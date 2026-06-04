@@ -1,0 +1,71 @@
+{
+  "name": "lanzer",
+  "scopeName": "source.lanzer",
+  "fileTypes": [
+    ".lanzer"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "name": "keyword.control.lanzer",
+      "match": "\\b(at|campaign|description|file|forbid|generates|has|import|in|min|not|require|support|workspace)\\b"
+    },
+    {
+      "name": "string.quoted.double.lanzer",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "include": "#string-character-escape"
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.single.lanzer",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "include": "#string-character-escape"
+        }
+      ]
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.lanzer",
+          "begin": "/\\*",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.lanzer"
+            }
+          },
+          "end": "\\*/",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.lanzer"
+            }
+          }
+        },
+        {
+          "begin": "//",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.whitespace.comment.leading.lanzer"
+            }
+          },
+          "end": "(?=$)",
+          "name": "comment.line.lanzer"
+        }
+      ]
+    },
+    "string-character-escape": {
+      "name": "constant.character.escape.lanzer",
+      "match": "\\\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|u\\{[0-9A-Fa-f]+\\}|[0-2][0-7]{0,2}|3[0-6][0-7]?|37[0-7]?|[4-7][0-7]?|.|$)"
+    }
+  }
+}

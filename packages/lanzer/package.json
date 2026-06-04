@@ -1,0 +1,63 @@
+{
+    "name": "lanzer",
+    "description": "Langium-integrated campaign generation and fuzzing toolkit",
+    "version": "0.0.1",
+    "type": "module",
+    "engines": {
+        "node": ">=20.10.0",
+        "npm": ">=10.2.3"
+    },
+    "files": [
+        "bin",
+        "out",
+        "src"
+    ],
+    "bin": {
+        "lanzer": "./bin/lanzer.js"
+    },
+    "main": "./out/index.js",
+    "module": "./out/index.js",
+    "exports": {
+        ".": {
+            "types": "./out/index.d.ts",
+            "default": "./out/index.js"
+        },
+        "./services": {
+            "types": "./out/services/index.d.ts",
+            "default": "./out/services/index.js"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            ".": [
+                "out/index"
+            ],
+            "services": [
+                "out/services/index"
+            ]
+        }
+    },
+    "scripts": {
+        "clean": "shx rm -fr *.tsbuildinfo out",
+        "langium:generate": "langium generate",
+        "langium:watch": "langium generate --watch",
+        "build": "echo 'No build step'",
+        "build:clean": "npm run clean && npm run build"
+    },
+    "dependencies": {
+        "@agentclientprotocol/claude-agent-acp": "^0.37.0",
+        "@agentclientprotocol/sdk": "^0.22.1",
+        "@modelcontextprotocol/sdk": "^1.17.5",
+        "chalk": "~5.3.0",
+        "commander": "~11.1.0",
+        "langium": "~4.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "~20.17.48",
+        "langium-cli": "~4.1.0"
+    },
+    "volta": {
+        "node": "20.19.2",
+        "npm": "10.8.2"
+    }
+}

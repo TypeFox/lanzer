@@ -1,0 +1,24 @@
+import "../../language/src/type-c.langium"
+
+campaign sortingDemo {
+    description "Build a small sorting program with reusable sort logic and a main entry point."
+    workspace "../../language/test/test-cases/hello-world"
+
+    file sortFile at "src/sort.tc" generates Module {
+        description "Contains sorting logic."
+        require FnDecl[name="sort"]
+        require FnDecl[name="partition"]
+        min 2 FnDecl
+    }
+
+    file mainFile at "src/main.tc" generates Module {
+        description "Contains the program entry point and sorts an array, displaying its values before and after"
+        require FnDecl[name="main"]
+        require FnDecl[name="main"] >> FunctionCall
+    }
+
+    support moduleConfig at "module.json" description "Project workspace configuration."
+
+    require FnDecl[name="main"] in mainFile
+    require FnDecl[name="sort"] in sortFile
+}

@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+lib/
+dist/
+*.tsbuildinfo
+
+# Langium-generated sources
+packages/lanzer/src/generated/
+
+# Logs
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Environment
+.env
+.env.local
+.env.*.local

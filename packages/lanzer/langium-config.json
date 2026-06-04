@@ -1,0 +1,17 @@
+{
+    "projectName": "Lanzer",
+    "mode": "production",
+    "languages": [
+        {
+            "id": "lanzer",
+            "grammar": "src/lanzer.langium",
+            "fileExtensions": [
+                ".lanzer"
+            ],
+            "textMate": {
+                "out": "syntaxes/lanzer.tmLanguage.json"
+            }
+        }
+    ],
+    "out": "src/generated"
+}
