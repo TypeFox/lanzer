@@ -12,3 +12,4 @@ export * from './language-server/type-system/operator.js';
 export * from './language-server/lox-module.js';
 export * from './language-server/lox-scope.js';
 export * from './language-server/lox-validator.js';
+export * from './language-server/lanzer/lox-lanzer.js';

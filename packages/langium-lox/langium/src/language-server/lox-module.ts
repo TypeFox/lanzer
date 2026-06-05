@@ -13,13 +13,15 @@ import {
 } from 'langium/grammar';
 import {
     CompositeAstReflection,
+    createDefaultLanzerModule,
     LanzerAstReflection,
     LanzerGeneratedModule,
     LanzerGeneratedSharedModule,
     LanzerLanguageModule,
     registerValidationChecks as registerLanzerValidationChecks,
-    type LanzerLanguageServices
+    type LanzerServices
 } from 'lanzer';
+import { LoxLanzerCampaignRunner, LoxLanzerService } from './lanzer/lox-lanzer.js';
 
 /**
  * Declaration of custom services - add your own service classes here.
@@ -101,7 +103,7 @@ export function createLoxServices(context: DefaultSharedModuleContext): {
 export function createLanzerLoxServices(context: DefaultSharedModuleContext): {
     shared: LangiumSharedServices;
     Lox: LoxServices;
-    Lanzer: LanzerLanguageServices;
+    Lanzer: LanzerServices;
     grammar: LangiumGrammarServices;
 } {
     const shared = inject(
@@ -130,7 +132,17 @@ export function createLanzerLoxServices(context: DefaultSharedModuleContext): {
     const Lanzer = inject(
         createDefaultModule({ shared }),
         LanzerGeneratedModule,
-        LanzerLanguageModule
+        LanzerLanguageModule,
+        createDefaultLanzerModule(shared),
+        {
+            // Override the host-language hooks with the Lox-aware implementations so that
+            // campaigns targeting Lox get Lox generation policy, the write-lox skill, and
+            // hard-error-only result collection.
+            lanzer: {
+                Lanzer: (services: LanzerServices) => new LoxLanzerService(shared, services),
+                CampaignRunner: (services: LanzerServices) => new LoxLanzerCampaignRunner(services)
+            }
+        }
     );
     shared.ServiceRegistry.register(grammar);
     shared.ServiceRegistry.register(Lox);
