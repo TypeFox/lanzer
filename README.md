@@ -1,6 +1,10 @@
 # Lanzer
 > An agent-driven Fuzzer for Langium based DSL
 
+<p align="center">
+  <img src="assets/lanzer.webp" alt="Lanzer" width="600">
+</p>
+
 ## What is Lanzer
 Lanzer is a semiformal DSL and tools around it, for generating samples, for your DSL.
 The DSL is used as a specifications for the tests you want to generate, with formal constraints imposed on the output, and informal description of what the text should do.

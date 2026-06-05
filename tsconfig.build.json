@@ -3,6 +3,9 @@
     "references": [
         {
             "path": "./packages/lanzer/tsconfig.json"
+        },
+        {
+            "path": "./packages/lanzer-extension/tsconfig.json"
         }
     ]
 }
