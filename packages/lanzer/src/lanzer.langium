@@ -13,7 +13,7 @@ GrammarImport:
 Campaign:
     'campaign' name=ID '{'
         ('description' description=STRING)?
-        ('workspace' workspaceRoot=STRING)?
+        'workspace' workspaceRoot=STRING
         files+=FileSpec*
         supportFiles+=SupportFileSpec*
         requirements+=CampaignRequirement*

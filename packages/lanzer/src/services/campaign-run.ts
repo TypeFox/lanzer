@@ -57,7 +57,7 @@ export interface RunLanzerCampaignDeps<
  * campaign runner as a post-generation validation callback, and dispatches the work to an agent
  * over ACP (which writes the generated files and re-validates against the campaign requirements).
  *
- * Host-agnostic: the Lox/Type-C/... specifics arrive entirely through {@link RunLanzerCampaignDeps}.
+ * Host-agnostic: the host-language specifics arrive entirely through {@link RunLanzerCampaignDeps}.
  * For the *slow path*, call {@link buildLanzerGenerationJobs} and `runLanzerCampaignTaskOverAcp`
  * directly and assemble these steps yourself.
  *

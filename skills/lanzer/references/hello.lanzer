@@ -6,7 +6,7 @@
 // Lox AST (LoxProgram is the entry rule; FunctionDeclaration/PrintStatement/Class
 // are real Lox node types).
 
-import "../../langium/src/language-server/lox.langium"
+import "../../../packages/langium-lox/langium/src/language-server/lox.langium"
 
 campaign loxHello {
     description "A tiny typed-Lox program with a greet function and a main entry point."

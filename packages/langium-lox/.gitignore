@@ -9,3 +9,6 @@ generated
 
 # Local ACP runtime config; copy from .env.copy
 .env
+
+# Generated campaign output (examples/lanzer/<campaign>/out)
+examples/lanzer/out/

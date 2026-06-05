@@ -26,15 +26,14 @@ import type {
  *   the `write-lox` skill and verified against the validator and interpreter.
  * - {@link dslSkill} points the generator at the `write-lox` authoring skill.
  *
- * Unlike the Type-C integration, Lox does NOT override `loadImportedGrammars`: the combined
- * `createLanzerLoxServices` container registers the Langium grammar language, so the default
- * grammar loader already parses imported `.langium` host grammars correctly.
+ * Lox does NOT need to override `loadImportedGrammars`: the combined `createLanzerLoxServices`
+ * container registers the Langium grammar language, so the default grammar loader already parses
+ * imported `.langium` host grammars correctly.
  */
 export class LoxLanzerService extends DefaultLanzerService {
     /**
-     * Layer Lox-specific generation guidance on top of the base policy (which supplies the
-     * grammar reference path). The base instruction is Type-C-specific, so we replace it
-     * outright with Lox instructions and add Lox required/forbidden practices.
+     * Layer Lox-specific generation guidance on top of the base policy (which supplies only the
+     * grammar reference path) by adding Lox instructions and required/forbidden practices.
      */
     override async getGenerationPolicy(job: LanzerGenerationJob): Promise<LanzerGenerationPolicy | undefined> {
         const base = await super.getGenerationPolicy(job);

@@ -78,8 +78,8 @@ node ./langium/bin/lox-lanzer.js validate ./examples/lanzer/invalid-demo.lanzer
 
 ```text
 Lanzer campaign is invalid: file:///…/packages/langium-lox/examples/lanzer/invalid-demo.lanzer
-- [diagnostic] @ 12:17 Could not resolve reference to AbstractRule named 'NonExistentNode'.
-- [diagnostic] @ 13:37 Type 'FunctionDeclaration' has no property 'notAProp'.
+- [diagnostic] @ 14:17 Could not resolve reference to AbstractRule named 'NonExistentNode'.
+- [diagnostic] @ 15:37 Type 'FunctionDeclaration' has no property 'notAProp'.
 ```
 
 ### Generating from a campaign

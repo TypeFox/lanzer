@@ -7,6 +7,8 @@
 import "../../langium/src/language-server/lox.langium"
 
 campaign invalidDemo {
+    workspace "out"
+
     file main at "invalid-demo.lox" generates LoxProgram {
         require FunctionDeclaration[name="main"]
         require NonExistentNode[name="oops"]

@@ -57,6 +57,12 @@ export class DefaultLanzerService<
                 continue;
             }
 
+            // During an ACP generation session the agent's intermediate edits populate the
+            // document store. If a cached version exists, tell the builder the file changed on
+            // disk so it re-reads the final content before validation.
+            if (this.shared.workspace.LangiumDocuments.hasDocument(uri)) {
+                await this.shared.workspace.DocumentBuilder.update([uri], []);
+            }
             const document = await this.shared.workspace.LangiumDocuments.getOrCreateDocument(uri);
             documents.push(document);
         }
@@ -110,12 +116,10 @@ export class DefaultLanzerService<
         }
 
         const grammarReferencePath = await pending;
-        return grammarReferencePath ? {
-            grammarReferencePath,
-            instructions: [
-                'Type-C is an in-development language — its type checker may have bugs. If you encounter a type error, first verify your code is correct. If it is, keep the code as written and do not work around the error; a correct program that the type checker rejects is a finding, not something to fix.'
-            ]
-        } : undefined;
+        // The default service is host-agnostic: it only supplies the grammar reference. Any
+        // language-specific guidance (required/forbidden practices, dialect notes, etc.) belongs in
+        // a host's own LanzerService override — see LoxLanzerService.getGenerationPolicy.
+        return grammarReferencePath ? { grammarReferencePath } : undefined;
     }
 
     private async resolveGrammarReferencePath(job: LanzerGenerationJob): Promise<string | undefined> {

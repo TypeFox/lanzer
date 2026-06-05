@@ -104,5 +104,24 @@ agent over ACP, and re-validates the produced files against the campaign require
 only hard errors). `validate`/`plan` use Lanzer's generic services and so do not emit the
 Lox-specific policy — that is applied only on the `generate` path via `createLanzerLoxServices`.
 
+Pass `--verbose` to watch what the agent does (the commands it runs, the files it touches, and its
+narration):
+
+```shell
+node --env-file=.env ./langium/bin/lox-lanzer.js generate ./examples/lanzer/hello.lanzer --verbose
+```
+
+### Running a produced file
+
+The campaigns write their output under `examples/lanzer/out/` (the `workspace "out"` declared in
+each campaign). Once generated, run a `.lox` file through the interpreter to see it execute:
+
+```shell
+node ./langium/lib/interpreter/cli.js run ./examples/lanzer/out/hello.lox
+```
+
+That closes the loop: a `.lanzer` campaign describes and constrains the program, `generate` produces
+a `.lox` file that satisfies those constraints, and the interpreter runs it.
+
 The same flows are available as library functions (`runLoxCampaignFile`, and the host-agnostic
 `runLanzerCampaign`) — see the "Using Lanzer" section in the [repository README](../../README.md).

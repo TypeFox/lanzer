@@ -94,6 +94,43 @@ function resolveAttemptBudget(options: RunLanzerAgentTaskOptions): AttemptBudget
     };
 }
 
+/**
+ * Extract a human-readable command/argument summary from a tool call's `rawInput`, for verbose
+ * progress output. Terminal/execute tools carry the shell command under common keys; anything else
+ * falls back to compact, truncated JSON so the operator can still see what was requested.
+ */
+function extractToolCommand(rawInput: unknown): string | undefined {
+    if (rawInput === undefined || rawInput === null) {
+        return undefined;
+    }
+    const truncate = (text: string): string => {
+        const oneLine = text.replace(/\s+/g, ' ').trim();
+        return oneLine.length > 300 ? oneLine.slice(0, 297) + '...' : oneLine;
+    };
+    if (typeof rawInput === 'string') {
+        return truncate(rawInput);
+    }
+    if (typeof rawInput === 'object') {
+        const obj = rawInput as Record<string, unknown>;
+        // Common shapes across agents for shell execution and similar tools.
+        for (const key of ['command', 'cmd', 'script', 'query', 'pattern']) {
+            const value = obj[key];
+            if (typeof value === 'string' && value.length > 0) {
+                return truncate(value);
+            }
+            if (Array.isArray(value)) {
+                return truncate(value.map(String).join(' '));
+            }
+        }
+        try {
+            return truncate(JSON.stringify(rawInput));
+        } catch {
+            return undefined;
+        }
+    }
+    return undefined;
+}
+
 export interface LanzerAgentRunResult {
     task: LanzerTaskPayload;
     sessionId: string;
@@ -125,6 +162,9 @@ class RecordingClient implements acp.Client {
     private readonly progress?: RecordingClientProgress;
     private readonly toolTitles = new Map<string, string>();
     private readonly toolKinds = new Map<string, string>();
+    /** Commands already echoed per tool call, so the same command isn't printed twice (the agent
+     * may send it on the initial tool_call and again on a tool_call_update). */
+    private readonly shownToolCommands = new Map<string, string>();
     private agentLineBuf = '';
     private thoughtLineBuf = '';
 
@@ -178,6 +218,14 @@ class RecordingClient implements acp.Client {
                     update.title ?? '',
                     update.status ? chalk.dim(' (' + update.status + ')') : ''
                 );
+                // Surface what the tool is doing (command + touched files). The initial tool_call
+                // often has an empty rawInput; the real command usually arrives on tool_call_update,
+                // so we extract from both and dedupe per tool-call id.
+                this.emitToolDetail(
+                    toolCallId,
+                    (update as { rawInput?: unknown }).rawInput,
+                    (update as { locations?: { path?: string }[] }).locations
+                );
                 return;
             }
             case 'tool_call_update': {
@@ -188,6 +236,12 @@ class RecordingClient implements acp.Client {
                     toolCallId,
                     status
                 });
+                // The command/args and touched files typically arrive here, not on the initial call.
+                this.emitToolDetail(
+                    toolCallId,
+                    (update as { rawInput?: unknown }).rawInput,
+                    (update as { locations?: { path?: string }[] }).locations
+                );
                 if (status === 'completed' || status === 'failed') {
                     const title = this.toolTitles.get(toolCallId) ?? toolCallId;
                     const kindStr = this.toolKinds.get(toolCallId) ?? '';
@@ -234,6 +288,35 @@ class RecordingClient implements acp.Client {
         }
         if (channel === 'agent') this.agentLineBuf = buf;
         else this.thoughtLineBuf = buf;
+    }
+
+    /**
+     * Echo what a tool call is doing — the command/args and any files it touches — when verbose.
+     * Called for both `tool_call` and `tool_call_update` because the real `rawInput` usually only
+     * appears on the update; results are deduped per tool-call id so a command prints at most once.
+     */
+    private emitToolDetail(
+        toolCallId: string | undefined,
+        rawInput: unknown,
+        locations: { path?: string }[] | undefined | null
+    ): void {
+        if (!this.progress?.verbose) return;
+        const command = extractToolCommand(rawInput);
+        const paths = (locations ?? []).map((l) => l.path).filter((p): p is string => !!p);
+        // Build a single fingerprint of (command + paths) and only emit when it changes, so the
+        // same detail repeated across initial call + updates prints at most once per tool call.
+        const detailKey = `${command ?? ''} ${paths.join(',')}`;
+        const previous = toolCallId ? this.shownToolCommands.get(toolCallId) : undefined;
+        if (detailKey === ' ' || detailKey === previous) {
+            return;
+        }
+        if (toolCallId) this.shownToolCommands.set(toolCallId, detailKey);
+        if (command && command !== '{}') {
+            this.emitProgress(chalk.dim('  $'), command);
+        }
+        if (paths.length > 0) {
+            this.emitProgress(chalk.dim('  @'), paths.join(', '));
+        }
     }
 
     private emitProgress(...parts: string[]): void {

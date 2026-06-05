@@ -119,14 +119,15 @@ export function createLoxLanzerCli(): Command {
         .option('--command <bin>', 'override the ACP command (else LANZER_ACP_COMMAND)')
         .option('--model <model>', 'override the model (else LANZER_ACP_MODEL)')
         .option('--max-attempts <n>', 'override prompts per session (else LANZER_ACP_MAX_ATTEMPTS)')
-        .option('--quiet', 'suppress per-event progress output')
+        .option('--verbose', 'show what the agent is doing: commands it runs, files it touches, and its narration')
+        .option('--quiet', 'suppress per-event progress output entirely')
         .description('run a .lanzer campaign through an agent to generate the target .lox file(s)')
-        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; quiet?: boolean }) => {
+        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; verbose?: boolean; quiet?: boolean }) => {
             const acp = resolveAcpOptionsFromEnv({
                 ...(options.command ? { command: options.command } : {}),
                 ...(options.model ? { model: options.model } : {}),
                 ...(options.maxAttempts ? { maxAttempts: Number.parseInt(options.maxAttempts, 10) } : {}),
-                ...(options.quiet ? {} : { progress: { label: 'lox', verbose: false } })
+                ...(options.quiet ? {} : { progress: { label: 'lox', verbose: !!options.verbose } })
             });
 
             const { runs } = await runLoxCampaignFile(file, acp);

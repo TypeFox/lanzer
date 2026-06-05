@@ -5,7 +5,7 @@
 // Demonstrates higher-order/typed functions and the langium-lox constraints
 // (mandatory types, no classes, no modulo).
 
-import "../../langium/src/language-server/lox.langium"
+import "../../../packages/langium-lox/langium/src/language-server/lox.langium"
 
 campaign loxCalculator {
     description "A small typed-Lox calculator: reusable numeric helpers plus a main that uses them."
