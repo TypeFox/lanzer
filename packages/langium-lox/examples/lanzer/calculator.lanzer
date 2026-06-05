@@ -1,0 +1,40 @@
+// A multi-file Lanzer campaign targeting the Lox grammar.
+//
+// Splits reusable arithmetic helpers into one .lox file and the program entry
+// point into another, with both file-local and campaign-level requirements.
+// Demonstrates higher-order/typed functions and the langium-lox constraints
+// (mandatory types, no classes, no modulo).
+
+import "../../langium/src/language-server/lox.langium"
+
+campaign loxCalculator {
+    description "A small typed-Lox calculator: reusable numeric helpers plus a main that uses them."
+
+    file mathFile at "math.lox" generates LoxProgram {
+        description "Reusable numeric helpers, each a typed function: add, sub, mul, and an applyTwice higher-order function."
+
+        require FunctionDeclaration[name="add"]
+        require FunctionDeclaration[name="sub"]
+        require FunctionDeclaration[name="mul"]
+        // A higher-order helper that takes a function parameter.
+        require FunctionDeclaration[name="applyTwice"]
+        // At least four helper functions in this file.
+        min 4 FunctionDeclaration
+        // No modulo: it does not exist in langium-lox.
+        forbid BinaryExpression[operator="%"]
+    }
+
+    file mainFile at "main.lox" generates LoxProgram {
+        description "Program entry point: a main() that calls the helpers and prints the results."
+
+        require FunctionDeclaration[name="main"]
+        // main must actually call something.
+        require FunctionDeclaration[name="main"] >> MemberCall[explicitOperationCall]
+        require PrintStatement
+    }
+
+    // Campaign-level constraints spanning the whole generated set.
+    forbid Class
+    require FunctionDeclaration[name="add"] in mathFile
+    require FunctionDeclaration[name="main"] in mainFile
+}
