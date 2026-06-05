@@ -6,6 +6,9 @@
     "type": "module",
     "main": "./lib/index.js",
     "module": "./lib/index.js",
+    "bin": {
+        "lox-lanzer": "./bin/lox-lanzer.js"
+    },
     "exports": {
       ".": {
         "types": "./lib/index.d.ts",
@@ -41,6 +44,7 @@
       }
     },
     "files": [
+        "bin",
         "lib",
         "src"
     ],

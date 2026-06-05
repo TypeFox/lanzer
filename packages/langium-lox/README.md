@@ -40,3 +40,69 @@ In VSCode open a **JavaScript Debug Terminal** and then execute the following co
 ```shell
 node ./langium/lib/interpreter/cli.js run ./examples/basic.lox
 ```
+
+## Targeting Lox from Lanzer
+
+This package is wired into [Lanzer](../lanzer), the monorepo's campaign DSL for
+structured, requirement-checked code generation. A `.lanzer` campaign imports a host
+grammar and declares structural requirements (CSS-style selectors over that grammar's
+AST); Lanzer validates those requirements before generation and re-checks them against
+the generated code afterwards.
+
+Two pieces make Lox a first-class Lanzer host language:
+
+- **`createLanzerLoxServices`** (in [`langium/src/language-server/lox-module.ts`](langium/src/language-server/lox-module.ts))
+  hosts the Lox, Lanzer, and Langium-grammar languages in one shared service container, so a
+  single workspace can parse and validate both `.lanzer` campaigns and the `.lox` files they target.
+- **`LoxLanzerService`** (in [`langium/src/language-server/lanzer/lox-lanzer.ts`](langium/src/language-server/lanzer/lox-lanzer.ts))
+  fills in the host-language hooks the generation pipeline asks for: `getGenerationPolicy`
+  injects the langium-lox rules (mandatory type annotations, boolean-only conditions; no
+  classes, no `%`, no truthiness, no standard library), and `dslSkill` points the generator at
+  the `write-lox` skill. A companion `LoxLanzerCampaignRunner` reports only hard errors.
+
+### Sample campaigns
+
+Two example campaigns targeting the Lox grammar live in [`examples/lanzer/`](examples/lanzer/):
+
+- [`hello.lanzer`](examples/lanzer/hello.lanzer) — a single `.lox` file that must define `greet`
+  and `main`, have `main` call something, print at least once, and never declare a class.
+- [`calculator.lanzer`](examples/lanzer/calculator.lanzer) — a multi-file campaign splitting typed
+  numeric helpers (`add`/`sub`/`mul`/`applyTwice`) from a `main` entry point, with file-local and
+  campaign-level requirements.
+
+Both import the Lox grammar with `import "../../langium/src/language-server/lox.langium"` and use
+`generates LoxProgram` (the grammar's entry rule). Selectors reference real Lox AST node types —
+`FunctionDeclaration[name="..."]`, `PrintStatement`, `MemberCall[explicitOperationCall]`,
+`BinaryExpression[operator="%"]`, `Class`.
+
+### Running the samples
+
+This package ships a prebuilt CLI, **`lox-lanzer`** ([`langium/bin/lox-lanzer.js`](langium/bin/lox-lanzer.js)),
+that drives campaigns with the Lox-aware services. Build the package first (`npm run build`), then
+from this directory:
+
+```shell
+# Validate a campaign (surface-level checks AND static reachability of every selector
+# against the Lox grammar) — does not call an agent:
+node ./langium/bin/lox-lanzer.js validate ./examples/lanzer/hello.lanzer
+
+# Resolve into concrete generation jobs (output paths, root rule, requirement counts),
+# optionally previewing the prompt for one job — does not call an agent:
+node ./langium/bin/lox-lanzer.js plan ./examples/lanzer/calculator.lanzer
+node ./langium/bin/lox-lanzer.js plan ./examples/lanzer/calculator.lanzer --job mathFile --prompt
+```
+
+To actually generate the `.lox` files, configure an ACP agent and run `generate`:
+
+```shell
+cp .env.copy .env          # edit .env for your agent runtime; see .env.copy for the options
+node --env-file=.env ./langium/bin/lox-lanzer.js generate ./examples/lanzer/calculator.lanzer
+```
+
+`generate` applies the Lox generation policy and the `write-lox` skill, dispatches each job to the
+agent over ACP, and re-validates the produced files against the campaign requirements (reporting
+only hard errors). `validate`/`plan` use Lanzer's generic services and so do not emit the
+Lox-specific policy — that is applied only on the `generate` path via `createLanzerLoxServices`.
+
+The same flows are available as library functions (`runLoxCampaignFile`, and the host-agnostic
+`runLanzerCampaign`) — see the "Using Lanzer" section in the [repository README](../../README.md).

@@ -13,3 +13,4 @@ export * from './language-server/lox-module.js';
 export * from './language-server/lox-scope.js';
 export * from './language-server/lox-validator.js';
 export * from './language-server/lanzer/lox-lanzer.js';
+export * from './language-server/lanzer/run-campaign.js';

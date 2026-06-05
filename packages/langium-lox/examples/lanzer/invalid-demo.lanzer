@@ -1,0 +1,15 @@
+// An intentionally INVALID campaign, used to demonstrate `validate` output.
+// Running `lox-lanzer validate` on this file reports two reachability errors:
+//   1. `NonExistentNode` is not a type in the Lox grammar's AST.
+//   2. `FunctionDeclaration` has no property named `notAProp`.
+// See the "Run the demo" section of the repository README.
+
+import "../../langium/src/language-server/lox.langium"
+
+campaign invalidDemo {
+    file main at "invalid-demo.lox" generates LoxProgram {
+        require FunctionDeclaration[name="main"]
+        require NonExistentNode[name="oops"]
+        require FunctionDeclaration[notAProp="x"]
+    }
+}
