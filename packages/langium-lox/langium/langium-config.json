@@ -1,0 +1,16 @@
+{
+    "projectName": "Lox",
+    "languages": [{
+        "id": "lox",
+        "grammar": "src/language-server/lox.langium",
+        "fileExtensions": [".lox"],
+        "textMate": {
+            "out": "../vscode/syntaxes/lox.tmLanguage.json"
+        },
+        "monarch": {
+            "out": "../vscode/syntaxes/lox.monarch.ts"
+        }
+    }],
+    "importExtension": ".js",
+    "out": "src/language-server/generated"
+}
