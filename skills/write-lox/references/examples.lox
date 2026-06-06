@@ -1,0 +1,70 @@
+// A curated langium-lox program that PASSES the type checker and RUNS.
+// Use it as a copy-from template. It deliberately avoids classes, `%`,
+// arrays, library calls, and truthiness — none of which work here.
+
+// --- Variables: a type hint, an initializer, or both ---
+var name = "world";            // type inferred from value
+var counter: number = 0;       // explicit type + value
+var ready: boolean = true;
+
+// --- Functions: typed params, mandatory return type, braced body ---
+fun add(a: number, b: number): number {
+    return a + b;
+}
+
+fun greet(who: string): void {
+    print "hello " + who;      // `+` concatenates; `print` is a statement ending in `;`
+}
+
+// A function that returns nothing meaningful is `void`.
+fun banner(): void {
+    print "----------";
+}
+
+// --- Higher-order / first-class functions ---
+fun applyTwice(f: (number) => number, x: number): number {
+    return f(f(x));
+}
+
+fun increment(n: number): number {
+    return n + 1;
+}
+
+fun makeAdder(): (number, number) => number {
+    return add;                // functions are values
+}
+
+// --- Top-level program ---
+banner();
+greet(name);
+
+// Conditions MUST be boolean — no truthiness.
+if (ready == true) {
+    print "ready";
+} else {
+    print "not ready";
+}
+
+// while: loops while the condition is exactly true
+while (counter < 3) {
+    print counter;
+    counter = counter + 1;
+}
+
+// for: header declares its own scope
+for (var i: number = 0; i < 3; i = i + 1) {
+    print i;
+}
+
+// Call a returned function (currying / chained call)
+print makeAdder()(2, 3);       // 5
+
+// Pass a function as an argument
+print applyTwice(increment, 10); // 12
+
+// String + number mixing is allowed only with `+`
+print "answer = " + add(40, 2);  // "answer = 42"
+
+// nil is assignable only to class types (none here), so it is rarely used.
+// Printing it shows `null`:
+print nil;                       // null

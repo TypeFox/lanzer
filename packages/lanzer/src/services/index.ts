@@ -1,3 +1,4 @@
+export * from './campaign-run.js';
 export * from './campaign-runner.js';
 export * from './default-services.js';
 export * from './module.js';

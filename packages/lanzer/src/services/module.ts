@@ -1,7 +1,7 @@
 import type { LangiumServices, LangiumSharedServices } from 'langium/lsp';
 import { DefaultLanzerCampaignRunner } from './campaign-runner.js';
 import { DefaultLanzerService } from './default-services.js';
-import type { LanzerModule, LanzerServices } from './types.js';
+import type { LanzerModule } from './types.js';
 
 export function createDefaultLanzerModule<
     TShared extends LangiumSharedServices = LangiumSharedServices,
@@ -12,9 +12,9 @@ export function createDefaultLanzerModule<
     return {
         lanzer: {
             Lanzer: (services) =>
-                new DefaultLanzerService(shared, services as TLanguage),
+                new DefaultLanzerService(shared, services),
             CampaignRunner: (services) =>
-                new DefaultLanzerCampaignRunner(services as LanzerServices<TShared, TLanguage>)
+                new DefaultLanzerCampaignRunner(services)
         }
     };
 }

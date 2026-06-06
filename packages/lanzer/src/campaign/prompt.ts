@@ -128,9 +128,6 @@ function renderPrompt(
         lines.push(`Use the installed agent skill named "${dslSkill.name}" before generating.`);
         lines.push('Use that skill alongside the grammar reference to understand host-specific language usage and idioms.');
     }
-    if (dslSkill?.path) {
-        lines.push(`Installed skill location hint: ${dslSkill.path}`);
-    }
     lines.push(`You must write the primary generated file to this absolute path: ${job.absoluteOutputPath}`);
     if (job.siblingGeneratedFiles.length > 0) {
         lines.push('You may also create or update other declared generated files listed below if needed for correctness.');
@@ -233,9 +230,6 @@ function renderCampaignPrompt(
     if (dslSkill?.name) {
         lines.push(`Use the installed agent skill named "${dslSkill.name}" before generating.`);
         lines.push('Use that skill alongside the grammar reference to understand host-specific language usage and idioms.');
-    }
-    if (dslSkill?.path) {
-        lines.push(`Installed skill location hint: ${dslSkill.path}`);
     }
     lines.push('You must write the following generated files in this run:');
     for (const job of jobs) {

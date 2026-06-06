@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "lib": [
+      "ES2022",
+      "WebWorker"
+    ],
+    // Enable project compilation
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "out",
+    "rootDir": "src",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noImplicitReturns": true,
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "**/src/**/*.ts",
+    "**/src/**/*.tsx",
+    "*.ts"
+  ],
+  "exclude": [
+    "**/lib/**/*",
+    "**/out/**/*",    
+    "**/node_modules/**/*"
+  ]
+}
