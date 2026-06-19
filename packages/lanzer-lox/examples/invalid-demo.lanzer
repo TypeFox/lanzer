@@ -1,0 +1,14 @@
+// A deliberately BROKEN campaign — it references a node type and a property that don't exist in
+// the Lox grammar. `lox-lanzer validate` resolves every selector against the (unmodified) Lox AST
+// and reports these as errors, exiting non-zero — no agent involved.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign invalidDemo {
+    description "Show Lanzer catching unreachable selectors before any generation runs."
+    workspace "test/invalid"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        require NonExistentNode
+        require FunctionDeclaration[notAProp="x"]
+    }
+}

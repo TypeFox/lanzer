@@ -1,6 +1,6 @@
 import { startLanguageServer } from 'langium/lsp';
 import { NodeFileSystem } from 'langium/node';
-import { createConnection, ProposedFeatures } from 'vscode-languageserver/node.js';
+import { createConnection, ProposedFeatures } from 'vscode-languageserver/node';
 import { createLanzerServices } from 'lanzer';
 
 // Create a connection to the client

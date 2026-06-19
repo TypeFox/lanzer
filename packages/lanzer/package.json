@@ -50,11 +50,11 @@
         "@modelcontextprotocol/sdk": "^1.17.5",
         "chalk": "~5.3.0",
         "commander": "~11.1.0",
-        "langium": "~4.1.0"
+        "langium": "~4.3.0"
     },
     "devDependencies": {
         "@types/node": "~20.17.48",
-        "langium-cli": "~4.1.0"
+        "langium-cli": "~4.3.0"
     },
     "volta": {
         "node": "20.19.2",
