@@ -65,7 +65,7 @@ export class DefaultLanzerCampaignRunner<
         for (const diagnostic of document.diagnostics ?? []) {
             issues.push({
                 kind: 'diagnostic',
-                message: diagnostic.message,
+                message: typeof diagnostic.message === 'string' ? diagnostic.message : diagnostic.message.value,
                 severity: diagnostic.severity,
                 line: diagnostic.range.start.line + 1,
                 character: diagnostic.range.start.character + 1

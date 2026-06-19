@@ -1,0 +1,14 @@
+// Campaign targeting the UNMODIFIED langium-lox submodule.
+// The grammar is imported straight from the submodule sources — lanzer-lox adds no files there.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign helloLox {
+    description "A small statically-typed Lox program with two functions."
+    workspace "test/hello-world"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        require FunctionDeclaration[name="main"]
+        require FunctionDeclaration[name="greet"]
+        min 2 FunctionDeclaration
+    }
+}
