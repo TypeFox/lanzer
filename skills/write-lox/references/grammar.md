@@ -53,7 +53,7 @@ Parameter           ::= ID ':' TypeReference
 - Function **parameters and return type are mandatory and typed**. The body is a brace block.
 - Functions may be declared at the top level or nested inside blocks/functions (closures).
 
-## Classes (parse-only — rejected by validator and interpreter)
+## Classes
 
 ```
 Class        ::= 'class' ID ('<' superClassRef)? '{' ClassMember* '}'
@@ -62,8 +62,9 @@ MethodMember ::= ID '(' (Parameter (',' Parameter)*)? ')' ':' TypeReference Expr
 FieldMember  ::= ID ':' TypeReference
 ```
 
-`<` denotes inheritance. **Do not emit classes for code meant to validate or run** — see
-`semantics.md`.
+`<` denotes inheritance. A field is `ID ':' Type` (no `var`, no `;`); a method is a function
+signature without `fun`. Classes, fields, methods, `this`, and `super` validate and run — see
+`semantics.md` for construction (`ClassName()`) and dispatch semantics.
 
 ## Expressions and precedence
 

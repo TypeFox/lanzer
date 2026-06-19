@@ -52,14 +52,20 @@ Checks that run during validation:
 - Otherwise: `Cannot perform operation 'OP' on value of type 'A'.`
 
 ### Classes
-- **Every `class` declaration is an error**: `Classes are currently unsupported.`
-  Any program containing a class fails validation. The interpreter independently throws
-  `Classes are currently unsupported` if one is reached.
+- **Classes are fully supported** — declaration, fields, methods, single inheritance, `this`, and
+  `super` validate and run.
+- **Fields** are `name: Type` (no `var`, no `;`); **methods** are `name(params): ReturnType { body }`
+  (no `fun`; return type required). A class name is a usable type.
+- **Construct** by calling the class name: `var c = Counter();` — there is no `new`. The constructor
+  takes **no arguments**; every field (own and inherited) starts as `nil`, so assign fields after
+  construction. Read/write fields with `c.field` / `c.field = v;`; call methods with `c.method(args)`.
+- **`this`** is the receiver inside a method; **`super.method()`** invokes the parent's method.
+- **Inheritance** is `class Sub < Super { ... }`. Circular inheritance is rejected by the validator.
 
 ## Assignability (`isAssignable(from, to)`)
 
 - Class type → class type: assignable iff `from` is the same class as `to` or a subclass (walks the
-  `<` inheritance chain). (Only relevant if classes worked.)
+  `<` inheritance chain) — so a subclass instance fits a superclass-typed variable.
 - `nil` → assignable **only** to a class type.
 - Function type → function type: same parameter count, each parameter type assignable, and the
   return type assignable. (Structural, by position; parameter names ignored.)
@@ -69,9 +75,9 @@ Checks that run during validation:
 ## Runtime behavior (interpreter/runner.ts)
 
 - **Top-level evaluation is sequential**, except `class` and `fun` declarations are skipped in the
-  main loop (functions are resolvable by reference, giving forward/hoisted visibility for calls;
-  encountering a `class` at top level throws). Variables are **not** hoisted — use before declaration
-  fails with `No variable 'x' defined`.
+  main loop — both are resolvable by reference, giving forward/hoisted visibility (you can construct
+  a class or call a function declared later in the file). Variables are **not** hoisted — use before
+  declaration fails with `No variable 'x' defined`.
 - **Scoping is lexical with block scopes.** Each `{ }` block, function call, and `for` header
   introduces a scope. Assignment (`set`) walks outward to find an existing binding; reading an
   undefined name throws `No variable 'x' defined @line:col`.
@@ -99,4 +105,5 @@ Checks that run during validation:
 - Initialize variables before use; don't depend on hoisting for `var`.
 - Use `+` for string building; everything else numeric stays numeric.
 - Keep loops bounded (5s cap).
-- Never emit `class`/`this`/`super`, `%`, arrays, or library calls in code meant to run.
+- Never emit `%`, arrays, or library calls in code meant to run — they don't exist. (Classes,
+  `this`, and `super` are fine.)

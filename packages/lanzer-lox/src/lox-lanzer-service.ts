@@ -51,11 +51,11 @@ export class LoxLanzerService extends DefaultLanzerService {
             'Primitive types are exactly `number`, `string`, `boolean`, `void`. `number` covers integers and decimals. Function types are written `(number, number) => number`.',
             'Terminate statements with `;` (var, print, return, expression statements). `print` is a statement: `print x;`, never `print(x)`. Blocks and `if`/`while`/`for`/`fun` take no trailing `;` and always use braces.',
             'Arithmetic (`-`, `*`, `/`) and comparison (`<`, `<=`, `>`, `>=`) require both operands to be `number`. `+` additionally allows `string` operands (concatenation or numeric addition). `and` / `or` / `!` are boolean-only.',
-            'Functions are first-class: they can be passed, returned, and chained (`makeAdder()(2, 3)`). Use this for higher-order behaviour.'
+            'Functions are first-class: they can be passed, returned, and chained (`makeAdder()(2, 3)`). Use this for higher-order behaviour.',
+            'Classes are supported: a field is `name: Type` (no `var`/`;`), a method is `name(params): ReturnType { body }` (no `fun`), construct with `ClassName()` (no `new`; fields start `nil`, assign them after construction), inherit with `class Sub < Super { ... }`, and use `this`/`super` inside methods.'
         ];
 
         const forbiddenPractices: string[] = [
-            'Do NOT emit classes, `this`, `super`, fields, methods, or constructor calls. Classes parse but are a hard error in both the validator ("Classes are currently unsupported.") and the interpreter.',
             'Do NOT use `%` (modulo) or any exponentiation operator — neither exists in the grammar, and the interpreter has no case for them.',
             'Do NOT rely on truthiness or implicit coercion: a number/string/`nil` is never a valid `if`/`while` condition on its own.',
             'Do NOT use arrays, lists, maps, string methods, `clock()`, or any standard-library/built-in call — there is no standard library. The only output mechanism is `print`.',
@@ -66,7 +66,7 @@ export class LoxLanzerService extends DefaultLanzerService {
         return {
             ...base,
             instructions: [
-                'This is the statically-typed `langium-lox` dialect, NOT the dynamically-typed Lox from "Crafting Interpreters". Type annotations are mandatory, conditions must be boolean, and classes are unsupported. The required and forbidden practices below are enforced by the validator and the interpreter — honour them exactly.'
+                'This is the statically-typed `langium-lox` dialect, NOT the dynamically-typed Lox from "Crafting Interpreters". Type annotations are mandatory and conditions must be boolean. Classes ARE supported (fields `name: Type`, methods `name(): Ret { ... }`, construct with `ClassName()`). The required and forbidden practices below are enforced by the validator and the interpreter — honour them exactly.'
             ],
             requiredPractices: [
                 ...(base.requiredPractices ?? []),

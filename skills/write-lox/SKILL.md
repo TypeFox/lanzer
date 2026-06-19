@@ -37,7 +37,7 @@ read the bundled reference files in `references/` for the full picture.
 9. **`+` is the only mixed operator** — allowed between `number` and/or `string` operands (string concatenation or numeric addition). `boolean`/`nil` are not allowed.
 10. **`==` / `!=` are strict.** Comparing incompatible types is allowed but produces a **warning** ("always false"/"always true"); at runtime it is JS `===`/`!==`.
 11. **Do NOT use `%` (modulo).** It is not in the grammar's `*`/`/` rule and the interpreter has no case for it — it cannot be written or will throw. There is no exponent operator either.
-12. **Classes parse but are HARD ERRORS.** Both the validator ("Classes are currently unsupported.") and the interpreter reject any `class`. Do not emit classes, `this`, `super`, fields, methods, or constructor calls unless the user explicitly wants the *grammar* demonstrated and accepts that it won't validate or run.
+12. **Classes are supported** — declaration, fields, methods, single inheritance, `this`, and `super` all validate and run. A **field** is `name: Type` (no `var`, no `;`); a **method** is `name(params): ReturnType { body }` (no `fun`; return type required, like a function). Construct with `ClassName()` (there is **no** `new`); the constructor takes **no arguments** and fields start as `nil`, so assign them after construction (`var c = Counter(); c.value = 0;`). Inherit with `class Sub < Super { ... }` (circular inheritance is rejected). A class name is a usable type, and `nil` is assignable to any class-typed target.
 13. **Function/lambda types are written `(P1, P2) => R`** — e.g. `var f: (number, number) => number = add;`. Functions are first-class and can be passed, returned, and curried (`identity(add)(1, 2)`).
 14. **No standard library / built-ins.** There is no `clock()`, no string methods, no `for`-each, no arrays/lists/maps. The only output is `print`.
 15. **Comments** are `// line` and `/* block */`. Strings are double-quoted only, with no escape sequences or interpolation; a string cannot contain `"`.
@@ -80,6 +80,17 @@ while (i < 3) {
 for (var j = 0; j < 3; j = j + 1) {
     print j;
 }
+
+// classes — fields `name: Type`, methods `name(): Ret { ... }`, construct with Name()
+class Counter {
+    value: number
+    bump(): void { this.value = this.value + 1; }
+    get(): number { return this.value; }
+}
+var c = Counter();
+c.value = 0;          // fields start nil; assign after construction (no `new`, no ctor args)
+c.bump();
+print c.get();        // 1
 ```
 
 ## Common mistakes to reject when reviewing
@@ -91,7 +102,7 @@ for (var j = 0; j < 3; j = j + 1) {
 - `and`/`or`/`!` on non-booleans; arithmetic or `<`/`>` on non-numbers.
 - `print(x)` instead of `print x;`, or a missing `;` on a statement.
 - Using `%`, exponentiation, arrays, `clock()`, or other built-ins that don't exist.
-- Emitting `class`/`this`/`super` and expecting it to validate or run.
+- A class field declared with `var` or a trailing `;` (it's `name: Type`), or a method written with `fun`; using `new` or passing constructor arguments (construct with `ClassName()`, then assign fields).
 - Escape sequences or `"` inside string literals.
 
 ## References
@@ -99,13 +110,13 @@ for (var j = 0; j < 3; j = j + 1) {
 Consult these bundled files for detail; prefer them over recalling canonical Lox:
 
 - `references/grammar.md` — full syntax: declarations, expressions, precedence, terminals, type syntax.
-- `references/semantics.md` — type-checking rules, runtime behavior, truthiness, errors, the 5s timeout, and class status.
+- `references/semantics.md` — type-checking rules, runtime behavior, truthiness, errors, the 5s timeout, and class semantics.
 - `references/examples.lox` — a curated program that validates and runs (use as a copy-from template).
 
 ## Authoring & review workflow
 
 When writing a `.lox` file: produce a program that passes the type checker (rules above), keep
-statements terminated, brace all blocks, and avoid classes and nonexistent built-ins.
+statements terminated, brace all blocks, and avoid nonexistent built-ins.
 
 To actually run a program through the bundled interpreter (5-second execution cap):
 

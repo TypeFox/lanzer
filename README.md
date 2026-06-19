@@ -7,7 +7,7 @@
 
 ## What is Lanzer
 Lanzer is a semiformal DSL and tools around it, for generating samples, for your DSL.
-The DSL is used as a specifications for the tests you want to generate, with formal constraints imposed on the output, and informal description of what the text should do.
+The DSL is used as a specification for the samples you want to generate, with formal constraints imposed on the output, and an informal description of what the sample should do.
 
 ```
 import "mylang.langium"
@@ -100,8 +100,10 @@ See **Using Lanzer** below for the library equivalents and how to plug in your o
 
 ## Using Lanzer
 
-`lanzer` is a **library**, not a CLI. It exposes the engine; your DSL package owns how that
-engine is driven. There are three tiers, from least to most code — pick the one that fits.
+`lanzer` is a **toolchain** around the generation engine: a library, plus a generic CLI that can
+`validate` and `plan` any campaign with no host code. The host-specific part — driving `generate`
+with your language's policy and skill — lives in your DSL package. There are three tiers below,
+from least to most code; pick the one that fits.
 
 The repo ships a complete worked example for the **Lox** language under
 [`packages/lanzer-lox`](packages/lanzer-lox) — a standalone package that drives the unmodified
@@ -116,9 +118,9 @@ agent and generate the target files:
 cd packages/lanzer-lox
 cp .env.copy .env           # then edit .env for your agent runtime (see .env.copy)
 
-# validate + plan never call an agent:
-node --env-file=.env ./bin/lox-lanzer.js validate ./examples/hello.lanzer
-node --env-file=.env ./bin/lox-lanzer.js plan     ./examples/hello.lanzer
+# validate + plan never call an agent (no .env needed):
+node ./bin/lox-lanzer.js validate ./examples/hello.lanzer
+node ./bin/lox-lanzer.js plan     ./examples/hello.lanzer
 
 # generate dispatches the campaign to your ACP agent and validates the result:
 node --env-file=.env ./bin/lox-lanzer.js generate  ./examples/hello.lanzer
