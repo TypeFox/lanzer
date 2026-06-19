@@ -1,0 +1,3 @@
+[submodule "packages/langium-lox"]
+	path = packages/langium-lox
+	url = https://github.com/TypeFox/langium-lox
