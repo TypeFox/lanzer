@@ -171,10 +171,12 @@ await runLanzerCampaignTaskOverAcp(jobs, { command, model, policy, dslSkill, val
 
 ### Plugging in your own DSL
 
-You do **not** modify your language to use Lanzer. Bring it in as a git submodule or an npm
-dependency and add a small standalone package that *consumes* it — exactly what
-[`packages/lanzer-lox`](packages/lanzer-lox) does against the unmodified `langium-lox` submodule.
-That package is the template; it has three parts:
+You do **not** modify your language to use Lanzer. `npm install lanzer`, then add a small package
+that *consumes* it together with your language's standard exports —
+[`packages/lanzer-lox`](packages/lanzer-lox) is that package for Lox and the template below. (Your
+language is just a dependency you already have; this repo only pulls `langium-lox` in as a git
+submodule to prove a third-party language can be driven with **zero edits**.) The template has three
+parts:
 
 **1. A service** ([`lox-lanzer-service.ts`](packages/lanzer-lox/src/lox-lanzer-service.ts)) — extend
 `DefaultLanzerService` and override `getGenerationPolicy` (your language's required/forbidden
