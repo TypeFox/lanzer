@@ -1,0 +1,13 @@
+// Targets class-based Lox — classes are supported in the langium-lox submodule.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign classesDemo {
+    description "A Counter class with a field and two methods, plus a subclass via `<`."
+    workspace "test/classes"
+
+    file modelFile at "src/model.lox" generates LoxProgram {
+        require Class[name="Counter"]
+        require MethodMember[name="bump"]
+        min 1 Class
+    }
+}
