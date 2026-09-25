@@ -7,7 +7,7 @@
     "scripts": {
         "clean": "npm run clean --workspaces --if-present",
         "watch": "tsc -b tsconfig.build.json --watch",
-        "build": "npm run langium:generate && tsc -b tsconfig.build.json && npm run build:host && npm run build --workspace packages/lanzer-extension && npm run build --workspace packages/lanzer-lox",
+        "build": "npm run langium:generate && tsc -b tsconfig.build.json && npm run build:host && npm run build --workspace packages/lanzer-extension && npm run build --workspace packages/lanzer-lox && (npm run build --workspace packages/lanzer-typec || true)",
         "build:host": "npm run --workspace packages/langium-lox/langium langium:generate && (npm run --workspace packages/langium-lox/langium compile:tsc || true) && test -f packages/langium-lox/langium/lib/index.js",
         "build:clean": "npm run clean && npm run build",
         "langium:generate": "npm run --workspace packages/lanzer langium:generate",
@@ -31,6 +31,8 @@
         "packages/lanzer-extension",
         "packages/langium-lox/langium",
         "packages/langium-lox/vscode",
-        "packages/lanzer-lox"
+        "packages/lanzer-lox",
+        "packages/typec/packages/language",
+        "packages/lanzer-typec"
     ]
 }

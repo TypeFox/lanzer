@@ -1,4 +1,5 @@
 import { GrammarAST } from 'langium';
+import { astTypeName } from '../util/guards.js';
 
 /**
  * Generates a custom BNF reference from a parsed Langium grammar that makes the
@@ -72,7 +73,7 @@ function renderElement(
     const card = element.cardinality ?? '';
 
     if (GrammarAST.isAction(element)) return '';
-    const rawType = (element as unknown as { $type: string }).$type;
+    const rawType = astTypeName(element);
     if (rawType === 'ParameterReference' || rawType === 'NamedArgument') return '';
 
     if (GrammarAST.isGroup(element) || GrammarAST.isUnorderedGroup(element)) {

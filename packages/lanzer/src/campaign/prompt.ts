@@ -22,10 +22,45 @@ export interface LanzerCampaignTaskPayload {
 
 export type LanzerTaskPayload = LanzerAgentTaskPayload | LanzerCampaignTaskPayload;
 
+/**
+ * Names of the tools Lanzer serves during a run, for the prompt to point at.
+ *
+ * Passed in rather than assumed: a run without a toolkit must not be told to call tools that are
+ * not there, which reads to the agent as a broken environment and costs a turn to discover.
+ */
+export interface LanzerPromptToolNames {
+    validate?: string;
+    grammarReference?: string;
+}
+
+/**
+ * Tell the agent the tools exist and when to reach for them.
+ *
+ * Registering a tool is not enough on its own — an agent that is not told to check its work has no
+ * reason to, and will write the file and stop. Naming `validate` as the same check the run is
+ * graded by is what turns it from an option into the obvious last step.
+ */
+function appendToolInstructions(lines: string[], tools: LanzerPromptToolNames | undefined): void {
+    if (!tools?.validate && !tools?.grammarReference) {
+        return;
+    }
+    lines.push('');
+    lines.push('Tools available to you for this task:');
+    if (tools.grammarReference) {
+        lines.push(`- \`${tools.grammarReference}\` returns the target language's full grammar. Consult it before writing syntax you are unsure of.`);
+    }
+    if (tools.validate) {
+        lines.push(`- \`${tools.validate}\` checks the files you have written: parse errors, language diagnostics, and whether the campaign requirements are satisfied.`);
+        lines.push(`  It runs the exact check this task is graded by, so treat a VALID result as done and anything else as work remaining.`);
+        lines.push(`  Call it after writing the file set, fix whatever it reports, and call it again. Do not finish while it still reports problems.`);
+    }
+}
+
 export function buildLanzerAgentTask(
     job: LanzerGenerationJob,
     policy?: LanzerGenerationPolicy,
-    dslSkill?: LanzerDslSkillReference
+    dslSkill?: LanzerDslSkillReference,
+    tools?: LanzerPromptToolNames
 ): LanzerAgentTaskPayload {
     const instructions = buildInstructions(job, policy);
     return {
@@ -33,14 +68,15 @@ export function buildLanzerAgentTask(
         policy,
         dslSkill,
         instructions,
-        prompt: renderPrompt(job, policy, instructions, dslSkill)
+        prompt: renderPrompt(job, policy, instructions, dslSkill, tools)
     };
 }
 
 export function buildLanzerCampaignTask(
     jobs: LanzerGenerationJob[],
     policy?: LanzerGenerationPolicy,
-    dslSkill?: LanzerDslSkillReference
+    dslSkill?: LanzerDslSkillReference,
+    tools?: LanzerPromptToolNames
 ): LanzerCampaignTaskPayload {
     if (jobs.length === 0) {
         throw new Error('Cannot build a Lanzer campaign task without generation jobs.');
@@ -55,7 +91,7 @@ export function buildLanzerCampaignTask(
         policy,
         dslSkill,
         instructions,
-        prompt: renderCampaignPrompt(jobs, policy, instructions, dslSkill)
+        prompt: renderCampaignPrompt(jobs, policy, instructions, dslSkill, tools)
     };
 }
 
@@ -103,7 +139,8 @@ function renderPrompt(
     job: LanzerGenerationJob,
     policy: LanzerGenerationPolicy | undefined,
     instructions: string[],
-    dslSkill: LanzerDslSkillReference | undefined
+    dslSkill: LanzerDslSkillReference | undefined,
+    tools: LanzerPromptToolNames | undefined
 ): string {
     const lines: string[] = [];
     lines.push(`Campaign: ${job.campaignName}`);
@@ -132,6 +169,8 @@ function renderPrompt(
     if (job.siblingGeneratedFiles.length > 0) {
         lines.push('You may also create or update other declared generated files listed below if needed for correctness.');
     }
+    appendToolInstructions(lines, tools);
+    lines.push('');
     lines.push('After writing the required file set, respond briefly with a status message.');
 
     if (instructions.length > 0) {
@@ -163,10 +202,11 @@ function renderPrompt(
     }
 
     if (job.supportFiles.length > 0) {
-        lines.push('Support files available for reading:');
+        lines.push('Support files — the project\'s own non-generated files, yours to manage:');
         for (const file of job.supportFiles) {
             lines.push(`- ${file.alias}: ${file.absolutePath}${file.description ? ` (${file.description})` : ''}`);
         }
+        lines.push('Read them for context, and create, update or remove them as the project requires — the DSL skill describes what each should contain.');
     }
 
     if (policy?.referenceFiles?.length) {
@@ -209,7 +249,8 @@ function renderCampaignPrompt(
     jobs: LanzerGenerationJob[],
     policy: LanzerGenerationPolicy | undefined,
     instructions: string[],
-    dslSkill: LanzerDslSkillReference | undefined
+    dslSkill: LanzerDslSkillReference | undefined,
+    tools: LanzerPromptToolNames | undefined
 ): string {
     const firstJob = jobs[0];
     const lines: string[] = [];
@@ -235,6 +276,8 @@ function renderCampaignPrompt(
     for (const job of jobs) {
         lines.push(`- ${job.fileAlias}: ${job.absoluteOutputPath} [${job.rootRule}]`);
     }
+    appendToolInstructions(lines, tools);
+    lines.push('');
     lines.push('After writing the required file set, respond briefly with a status message.');
 
     if (instructions.length > 0) {
@@ -267,10 +310,11 @@ function renderCampaignPrompt(
 
     const supportFiles = jobs[0].supportFiles;
     if (supportFiles.length > 0) {
-        lines.push('Support files available for reading:');
+        lines.push('Support files — the project\'s own non-generated files, yours to manage:');
         for (const file of supportFiles) {
             lines.push(`- ${file.alias}: ${file.absolutePath}${file.description ? ` (${file.description})` : ''}`);
         }
+        lines.push('Read them for context, and create, update or remove them as the project requires — the DSL skill describes what each should contain.');
     }
 
     if (policy?.referenceFiles?.length) {

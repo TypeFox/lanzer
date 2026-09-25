@@ -28,3 +28,15 @@ npm-debug.log*
 .env
 .env.local
 .env.*.local
+
+# Lanzer run artifacts (grammar cache + generated campaign output)
+packages/lanzer-lox/.lanzer
+.lanzer
+
+packages/lanzer-lox/examples/test/
+
+# Local Type-C test bed: a real language copied in for testing, plus its Lanzer host
+# integration and agent skill. Not part of the published repo.
+packages/typec/
+packages/lanzer-typec/
+skills/write-typec/

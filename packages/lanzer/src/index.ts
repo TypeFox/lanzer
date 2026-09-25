@@ -1,3 +1,8 @@
+export * from './acp/permissions.js';
+export * from './acp/tool-host.js';
+export * from './report/model.js';
+export * from './report/build.js';
+export * from './report/render.js';
 export * from './acp/run.js';
 export * from './generated/ast.js';
 export {

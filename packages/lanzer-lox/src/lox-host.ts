@@ -25,7 +25,7 @@ import { LoxLanzerCampaignRunner, LoxLanzerService } from './lox-lanzer-service.
 export function createLanzerLoxServices(
     context: DefaultSharedModuleContext
 ): LanzerHostServices<LoxServices> {
-    return createLanzerHostServices<LoxServices>(
+    return createLanzerHostServices(
         context,
         {
             generatedSharedModule: LoxGeneratedSharedModule,

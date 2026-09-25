@@ -50,7 +50,17 @@ export interface LanzerForbidRequirementSpec {
     fileAlias?: string;
 }
 
-export type LanzerCombinator = '>' | '>>';
+/**
+ * Selector combinators, as a value list the type is derived from.
+ *
+ * The grammar declares these alternatives as `returns string`, so the parser hands back a plain
+ * string and something has to narrow it (see `asLiteral`). Deriving the union from the list keeps
+ * the check and the type in step — adding a combinator to the grammar and to this array is one
+ * edit, and forgetting the type is not possible.
+ */
+export const LANZER_COMBINATORS = ['>', '>>'] as const;
+
+export type LanzerCombinator = (typeof LANZER_COMBINATORS)[number];
 
 export interface LanzerSelector {
     leadingCombinator?: LanzerCombinator;
@@ -75,10 +85,15 @@ export interface LanzerPresencePredicate {
     property: string;
 }
 
+/** Comparison operators a value predicate can use. Mirrors `PredicateOp` in the grammar. */
+export const LANZER_VALUE_PREDICATE_OPS = ['=', '!=', '^=', '$=', '*='] as const;
+
+export type LanzerValuePredicateOp = (typeof LANZER_VALUE_PREDICATE_OPS)[number];
+
 export interface LanzerValuePredicate {
     kind: 'value';
     property: string;
-    op: '=' | '!=' | '^=' | '$=' | '*=';
+    op: LanzerValuePredicateOp;
     value: string;
 }
 
@@ -90,8 +105,13 @@ export interface LanzerCrossRefPredicate {
     nestedPredicates: LanzerPredicate[];
 }
 
+/** Pseudo-class names a selector can use. Mirrors `PseudoClassKind` in the grammar. */
+export const LANZER_PSEUDO_CLASS_KINDS = ['has', 'not'] as const;
+
+export type LanzerPseudoClassKind = (typeof LANZER_PSEUDO_CLASS_KINDS)[number];
+
 export interface LanzerPseudoClass {
-    kind: 'has' | 'not';
+    kind: LanzerPseudoClassKind;
     selector: LanzerSelector;
 }
 

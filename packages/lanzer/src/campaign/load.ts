@@ -3,12 +3,15 @@ import { resolve } from 'node:path';
 import { URI, type LangiumDocument } from 'langium';
 import { NodeFileSystem } from 'langium/node';
 import type { DefaultSharedModuleContext } from 'langium/lsp';
-import type { CampaignFile } from '../generated/ast.js';
+import { isCampaignFile, type CampaignFile } from '../generated/ast.js';
 import { createLanzerServices } from '../lanzer-module.js';
+import { diagnosticCode } from '../util/guards.js';
 
 export interface LanzerValidationIssue {
     kind: 'lexer-error' | 'parser-error' | 'diagnostic';
     message: string;
+    /** Host-supplied diagnostic code, when the language sets one. See `LanzerDocumentIssue.code`. */
+    code?: string;
     severity?: number;
     line?: number;
     character?: number;
@@ -22,7 +25,15 @@ export interface LoadLanzerDocumentOptions {
 
 export interface LanzerDocumentLoadResult {
     document: LangiumDocument;
-    model: CampaignFile;
+    /**
+     * The parsed campaign, or `undefined` when the source did not parse into one.
+     *
+     * Langium recovers from most errors and still returns a `CampaignFile`, so this is normally
+     * present even for an invalid campaign — `issues` is what says whether it is any good. It is
+     * absent only when parsing produced something else entirely, which previously reached callers
+     * typed as a campaign and failed on first property access instead of here.
+     */
+    model: CampaignFile | undefined;
     issues: LanzerValidationIssue[];
 }
 
@@ -42,7 +53,7 @@ export async function loadLanzerDocumentFromString(
 
     return {
         document,
-        model: document.parseResult.value as CampaignFile,
+        model: isCampaignFile(document.parseResult.value) ? document.parseResult.value : undefined,
         issues: collectIssues(document)
     };
 }
@@ -77,9 +88,11 @@ function collectIssues(document: LangiumDocument): LanzerValidationIssue[] {
     }
 
     for (const diagnostic of document.diagnostics ?? []) {
+        const code = diagnosticCode(diagnostic.code);
         issues.push({
             kind: 'diagnostic',
             message: typeof diagnostic.message === 'string' ? diagnostic.message : diagnostic.message.value,
+            ...(code ? { code } : {}),
             severity: diagnostic.severity,
             line: diagnostic.range.start.line + 1,
             character: diagnostic.range.start.character + 1

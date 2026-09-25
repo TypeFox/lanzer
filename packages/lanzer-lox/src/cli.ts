@@ -1,11 +1,19 @@
 import { Command } from 'commander';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import {
     buildLanzerAgentTask,
     buildLanzerGenerationJobs,
+    describePermissionPolicy,
     findLanzerGenerationJob,
     loadLanzerDocumentFromFile,
+    buildLanzerSuiteReport,
+    permissiveLanzerPolicy,
+    renderLanzerRunSummary,
+    renderLanzerSuiteSummary,
     resolveAcpOptionsFromEnv,
-    resolveLanzerCampaignFile
+    resolveLanzerCampaignFile,
+    resolvePermissionPolicy
 } from 'lanzer';
 import { runLoxCampaignFile } from './run-campaign.js';
 
@@ -119,32 +127,90 @@ export function createLoxLanzerCli(): Command {
         .option('--command <bin>', 'override the ACP command (else LANZER_ACP_COMMAND)')
         .option('--model <model>', 'override the model (else LANZER_ACP_MODEL)')
         .option('--max-attempts <n>', 'override prompts per session (else LANZER_ACP_MAX_ATTEMPTS)')
+        .option('--allow <kinds>', 'ACP tool kinds the agent may use, comma-separated, or "all" (else LANZER_ACP_ALLOW)')
+        .option('--allow-all', 'shorthand for --allow all; lets the agent run shell commands and reach the network')
+        .option('--report <path>', 'where to write the JSON run report (default: .lanzer/reports/<campaign>-<time>.json)')
+        .option('--no-report', 'do not write a JSON run report')
         .option('--verbose', 'show what the agent is doing: commands it runs, files it touches, and its narration')
         .option('--quiet', 'suppress per-event progress output entirely')
         .description('run a .lanzer campaign through an agent to generate the target .lox file(s)')
-        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; verbose?: boolean; quiet?: boolean }) => {
+        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean }) => {
+            const permissions = options.allowAll
+                ? permissiveLanzerPolicy()
+                : options.allow
+                    ? resolvePermissionPolicy(options.allow)
+                    : undefined;
+
+            // A misspelled kind would otherwise read as a deliberate withholding, and the run
+            // would fail later as if the agent were at fault. Stop on it instead.
+            if (permissions && permissions.unknownEntries.length > 0) {
+                console.error(`Unknown tool kind(s) in --allow: ${permissions.unknownEntries.join(', ')}`);
+                console.error('Valid kinds: read, edit, delete, move, search, execute, think, fetch, switch_mode, other (or "all").');
+                process.exitCode = 1;
+                return;
+            }
+
             const acp = resolveAcpOptionsFromEnv({
                 ...(options.command ? { command: options.command } : {}),
                 ...(options.model ? { model: options.model } : {}),
                 ...(options.maxAttempts ? { maxAttempts: Number.parseInt(options.maxAttempts, 10) } : {}),
+                ...(permissions ? { permissions } : {}),
                 ...(options.quiet ? {} : { progress: { label: 'lox', verbose: !!options.verbose } })
             });
 
+            if (acp.permissions && acp.permissions.unknownEntries.length > 0) {
+                console.error(`Unknown tool kind(s) in LANZER_ACP_ALLOW: ${acp.permissions.unknownEntries.join(', ')}`);
+                console.error('Valid kinds: read, edit, delete, move, search, execute, think, fetch, switch_mode, other (or "all").');
+                process.exitCode = 1;
+                return;
+            }
+            if (acp.permissions && !options.quiet) {
+                console.error(`Agent permissions: ${describePermissionPolicy(acp.permissions)}`);
+            }
+
             const { runs } = await runLoxCampaignFile(file, acp);
+            const reports = runs.flatMap((run) => (run.report ? [run.report] : []));
             let failed = 0;
+
             for (const run of runs) {
                 const label = 'campaignName' in run.task ? run.task.campaignName : 'campaign';
-                const ok = run.validation?.ok ?? true;
+                const report = run.report;
+                const ok = report?.ok ?? run.validation?.ok ?? true;
                 if (!ok) {
                     failed += 1;
-                    console.error(`✗ ${label} — requirements not satisfied:`);
-                    for (const issue of run.validation?.issues ?? []) {
-                        console.error(`  - ${issue}`);
-                    }
+                    console.error(`✗ ${label} — ${report?.failedStageDescription ?? 'requirements not satisfied'}`);
                 } else {
                     console.log(`✓ ${label} — generated and validated`);
                 }
+                // The per-run block carries the detail the ✓/✗ line cannot: which stage failed,
+                // what it cost, and which diagnostics came back grouped by code.
+                if (report && !options.quiet) {
+                    console.error(renderLanzerRunSummary(report));
+                } else if (!ok) {
+                    for (const issue of run.validation?.issues ?? []) console.error(`  - ${issue}`);
+                }
             }
+
+            if (reports.length > 0) {
+                const stamp = new Date().toISOString();
+                const suite = buildLanzerSuiteReport(reports, stamp);
+                if (reports.length > 1 && !options.quiet) {
+                    console.error('');
+                    console.error(renderLanzerSuiteSummary(suite));
+                }
+                // Written by default. A run that took minutes and cost real money should not need
+                // to be repeated because nobody passed a flag the first time, and the terminal
+                // block is a summary — the file is the record.
+                if (options.report !== false) {
+                    const path = typeof options.report === 'string'
+                        ? resolve(options.report)
+                        : resolve('.lanzer', 'reports', `${reports[0].campaign}-${stamp.replace(/[:.]/g, '-')}.json`);
+                    await mkdir(dirname(path), { recursive: true });
+                    await writeFile(path, JSON.stringify(suite, null, 2), 'utf8');
+                    console.error(`report: ${path}`);
+                }
+            }
+
             if (failed > 0) process.exitCode = 1;
         });
 

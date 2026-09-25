@@ -32,7 +32,14 @@ A campaign has these layers:
 2. `campaign` — the whole generation request.
 3. `workspace` — **required.** The project root the generated files live in; every `file` path is resolved relative to it. Declare it right after the optional `description` and before any `file`.
 4. `file` — one generated output and its file-local requirements.
-5. `support` — existing context files the generator may read but **must not** generate.
+5. `support` — the project's own non-generated files: a manifest, a config, a lock file. The
+   agent may create, update or remove them freely; it is building the project, and a project is
+   more than its source files. Lanzer does not police them — what a valid one looks like belongs
+   in the DSL skill, which is where the agent learns the language's conventions anyway.
+
+   Give each a `description` saying what it is for. That plus the skill is what the agent works
+   from. A support file written in the host language is also parsed and validated alongside the
+   generated files; one in another format (JSON, TOML) is context only.
 6. Campaign-level `require ... in <fileAlias>` constraints for cross-file expectations.
 
 ## DSL shape
@@ -212,7 +219,18 @@ generating files requires host services (the generation policy and DSL skill for
 the host package's own tooling for its `generate` command.
 
 ACP settings are read from environment variables (`LANZER_ACP_COMMAND`, `LANZER_ACP_MODEL`,
-`LANZER_ACP_PROVIDER`, `LANZER_ACP_EFFORT`, `LANZER_ACP_MAX_ATTEMPTS`).
+`LANZER_ACP_PROVIDER`, `LANZER_ACP_EFFORT`, `LANZER_ACP_MAX_ATTEMPTS`, `LANZER_ACP_ALLOW`).
+
+`LANZER_ACP_ALLOW` lists the ACP tool kinds the agent may use — `read`, `edit`, `delete`, `move`,
+`search`, `execute`, `think`, `fetch`, `switch_mode`, `other`. Unset means the generation baseline
+(`read`, `edit`, `search`, `think`, `other`): enough to write files, no shell and no network. Naming
+any kind limits the run to exactly those. A campaign that needs the agent to run commands must say
+so with `execute`, or with `--allow-all` on the host CLI.
+
+During generation the agent can call Lanzer's own tools — `validate` (the same campaign check that
+grades the run) and `grammar_reference` — served in-process. `generate` reports the outcome per
+campaign and accepts `--report <path>` for a JSON dump; a failure names the stage it failed at
+(`launch`, `session`, `turn`, `no_output`, `syntax`, `semantics`, `requirements`, `scope`).
 
 After generation, Lanzer runs each requirement's selector against the generated file's AST. Failures are reported as `Required selector did not match any node ...`, `Selector matched K of required N ...`, or `Forbidden selector matched K node(s) ...`.
 

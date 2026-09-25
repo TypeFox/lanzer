@@ -1,5 +1,6 @@
 import type { LangiumDocument } from 'langium';
 import type { LangiumServices, LangiumSharedServices } from 'langium/lsp';
+import { diagnosticCode } from '../util/guards.js';
 import type {
     LanzerCampaignRunRequest,
     LanzerCampaignRunner,
@@ -63,9 +64,11 @@ export class DefaultLanzerCampaignRunner<
         }
 
         for (const diagnostic of document.diagnostics ?? []) {
+            const code = diagnosticCode(diagnostic.code);
             issues.push({
                 kind: 'diagnostic',
                 message: typeof diagnostic.message === 'string' ? diagnostic.message : diagnostic.message.value,
+                ...(code ? { code } : {}),
                 severity: diagnostic.severity,
                 line: diagnostic.range.start.line + 1,
                 character: diagnostic.range.start.character + 1

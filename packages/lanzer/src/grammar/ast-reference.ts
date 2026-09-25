@@ -112,12 +112,13 @@ function renderTypeDefinition(type: GrammarAST.TypeDefinition): string {
         if (type.typeRef?.ref?.name) return type.typeRef.ref.name;
         if (type.primitiveType) return type.primitiveType;
         // String literal types (e.g. 'fn' | 'cfn') live in the `stringType` property
-        const stringType = (type as unknown as Record<string, unknown>)['stringType'];
-        if (typeof stringType === 'string') return `'${stringType}'`;
+        if (type.stringType) return `'${type.stringType}'`;
         return 'boolean'; // only remaining SimpleType variant is stringBool
     }
     if (GrammarAST.isReferenceType(type)) {
-        const refName = (type.referenceType as GrammarAST.SimpleType | undefined)?.typeRef?.ref?.name;
+        // `referenceType` is any TypeDefinition; only a SimpleType names the rule referred to.
+        const target = type.referenceType;
+        const refName = GrammarAST.isSimpleType(target) ? target.typeRef?.ref?.name : undefined;
         return refName ? `@${refName}` : '@ref';
     }
     return 'unknown';
