@@ -2,6 +2,14 @@ import {
     runLanzerCampaignTaskOverAcp,
     type LanzerAgentRunResult
 } from '../acp/run.js';
+import {
+    resolvePermissionPolicy,
+    type LanzerPermissionPolicy
+} from '../acp/permissions.js';
+import type { LanzerToolkit } from '../acp/tool-host.js';
+import { buildLanzerRunReport } from '../report/build.js';
+import type { LanzerCampaignValidationResult } from './types.js';
+import { readFile } from 'node:fs/promises';
 import { buildLanzerGenerationJobs } from '../campaign/jobs.js';
 import type { LanzerResolvedCampaign } from '../campaign/model.js';
 import type { LanzerCampaignRunner, LanzerService } from './types.js';
@@ -28,6 +36,8 @@ export interface LanzerAcpOptions {
     maxAttempts?: number;
     fixIterations?: number;
     retryIterations?: number;
+    /** What the agent may do, by ACP tool kind. Defaults to the generation baseline. */
+    permissions?: LanzerPermissionPolicy;
     /** Progress streaming for the run. */
     progress?: {
         label?: string;
@@ -77,8 +87,33 @@ export async function runLanzerCampaign(
     const policy = await deps.service.getGenerationPolicy(jobs[0]);
     const dslSkill = await deps.service.dslSkill(jobs[0]);
 
+    // The agent gets the campaign runner itself, not a copy of it. `validate` below flattens the
+    // same result into the strings a fix prompt needs; the toolkit hands over the structured form.
+    // One implementation, so the agent's answer and Lanzer's verdict cannot disagree.
+    const toolkit: LanzerToolkit = {
+        validate: () => deps.runner.validateCampaign(resolved.request),
+        grammarReference: async () => {
+            const path = policy?.grammarReferencePath;
+            if (!path) return undefined;
+            try {
+                return await readFile(path, 'utf8');
+            } catch {
+                // The reference is an optimisation for the agent, not a precondition for the run.
+                return undefined;
+            }
+        }
+    };
+
+    // The flattened form below feeds fix prompts; the structured form feeds the report. Captured
+    // from the same call so the report describes the verdict the run actually acted on, and does
+    // not pay for a second validation pass to find out.
+    let lastVerdict: LanzerCampaignValidationResult | undefined;
+    /** The flattened form of `lastVerdict` alone, so findings added downstream can be told apart. */
+    let lastVerdictIssues: string[] = [];
+
     const validate = async () => {
         const result = await deps.runner.validateCampaign(resolved.request);
+        lastVerdict = result;
         const issues: string[] = [];
         for (const doc of result.documents) {
             for (const issue of doc.issues) {
@@ -88,10 +123,11 @@ export async function runLanzerCampaign(
         }
         for (const issue of result.campaign?.issues ?? []) issues.push(issue);
         for (const issue of result.workspace?.issues ?? []) issues.push(issue);
+        lastVerdictIssues = [...issues];
         return { ok: result.ok, issues };
     };
 
-    return runLanzerCampaignTaskOverAcp(jobs, {
+    const run = await runLanzerCampaignTaskOverAcp(jobs, {
         command: acp.command,
         args: acp.args,
         cwd: acp.cwd,
@@ -102,11 +138,33 @@ export async function runLanzerCampaign(
         maxAttempts: acp.maxAttempts,
         fixIterations: acp.fixIterations,
         retryIterations: acp.retryIterations,
+        permissions: acp.permissions,
+        toolkit,
         policy,
         dslSkill,
         validate,
         progress: acp.progress
     });
+
+    // The campaign runner is not the only judge: `runLanzerCampaignTaskOverAcp` additionally checks
+    // that the declared file set is exactly what appeared on disk, and merges that into the run's
+    // own verdict. Reporting only the runner's structured result made a run that failed on a stray
+    // file read as a clean pass — the generated files really were valid, and the finding that sank
+    // the run lived somewhere the report never looked.
+    const fileSetIssues = (run.validation?.issues ?? []).filter(
+        (issue) => !lastVerdictIssues.includes(issue)
+    );
+
+    run.report = await buildLanzerRunReport({
+        campaign: resolved.campaign.name,
+        jobs,
+        run,
+        validation: lastVerdict,
+        fileSetIssues,
+        extraFiles: run.extraFiles,
+        ok: run.validation?.ok
+    });
+    return run;
 }
 
 /**
@@ -117,6 +175,11 @@ export async function runLanzerCampaign(
  * - `LANZER_ACP_ARGS` (JSON array string, e.g. `'["-y","@zed-industries/codex-acp"]'`)
  * - `LANZER_ACP_PROVIDER`, `LANZER_ACP_MODEL`, `LANZER_ACP_EFFORT`
  * - `LANZER_ACP_MAX_ATTEMPTS` (integer, default 2)
+ * - `LANZER_ACP_ALLOW` (comma-separated ACP tool kinds, or `all`)
+ *
+ * `LANZER_ACP_ALLOW` is read literally: naming any kind means the run is limited to exactly
+ * those, so widening and narrowing use the same one setting. Leaving it out is what selects the
+ * generation baseline — an operator never acquires the shell by saying nothing.
  *
  * Load the `.env` file however you prefer before calling this — e.g. `node --env-file=.env ...`.
  */
@@ -141,6 +204,7 @@ export function resolveAcpOptionsFromEnv(overrides: Partial<LanzerAcpOptions> = 
         model: env.LANZER_ACP_MODEL,
         effort: env.LANZER_ACP_EFFORT,
         maxAttempts: Number.isFinite(maxAttempts) ? maxAttempts : undefined,
+        permissions: resolvePermissionPolicy(env.LANZER_ACP_ALLOW),
         ...overrides
     };
 }

@@ -1,4 +1,5 @@
-import { AstUtils, isAstNode, isReference, type AstNode, type AstReflection, type Reference } from 'langium';
+import { AstUtils, isAstNode, type AstNode, type AstReflection } from 'langium';
+import { isAstReference, readAstProperty } from '../util/guards.js';
 import type {
     LanzerCombinator,
     LanzerPredicate,
@@ -86,7 +87,7 @@ function matchesPredicate(
     predicate: LanzerPredicate,
     reflection: AstReflection
 ): boolean {
-    const value = (node as unknown as Record<string, unknown>)[predicate.property];
+    const value = readAstProperty(node, predicate.property);
 
     if (predicate.kind === 'presence') {
         if (value === undefined || value === null) return false;
@@ -94,14 +95,31 @@ function matchesPredicate(
         return true;
     }
 
+    // A property declared with `+=` in the grammar always holds an array, however many elements
+    // it ended up with — so a selector written against one has to ask whether *any* element
+    // matches. Without this, `[args->Attr]` against `args += [Attr:ID]` could never match anything:
+    // the checks below run on the array itself, and an array is neither a string nor a reference.
+    // `presence` needs no such branch; it already asks about the array.
+    const candidates = Array.isArray(value) ? value : [value];
+
     if (predicate.kind === 'value') {
-        const actual = readStringValue(value);
-        if (actual === undefined) return false;
-        return compareValue(actual, predicate.op, predicate.value);
+        return candidates.some((candidate) => {
+            const actual = readStringValue(candidate);
+            return actual !== undefined && compareValue(actual, predicate.op, predicate.value);
+        });
     }
 
     // crossRef
-    if (!isReference(value)) {
+    return candidates.some((candidate) => matchesCrossRef(candidate, predicate, reflection));
+}
+
+/** Whether one property value is a reference resolving to the required type and shape. */
+function matchesCrossRef(
+    value: unknown,
+    predicate: Extract<LanzerPredicate, { kind: 'crossRef' }>,
+    reflection: AstReflection
+): boolean {
+    if (!isAstReference(value)) {
         return false;
     }
     const resolved = value.ref;
@@ -132,7 +150,7 @@ function directChildren(node: AstNode): AstNode[] {
     const out: AstNode[] = [];
     for (const key of Object.keys(node)) {
         if (key.startsWith('$')) continue;
-        const value = (node as unknown as Record<string, unknown>)[key];
+        const value = readAstProperty(node, key);
         if (Array.isArray(value)) {
             for (const entry of value) {
                 if (isAstNode(entry)) {
@@ -159,8 +177,8 @@ function descendantsOf(node: AstNode): AstNode[] {
 function readStringValue(value: unknown): string | undefined {
     if (typeof value === 'string') return value;
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-    if (isReference(value as Reference | undefined)) {
-        return (value as Reference).$refText;
+    if (isAstReference(value)) {
+        return value.$refText;
     }
     return undefined;
 }

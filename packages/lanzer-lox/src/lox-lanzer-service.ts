@@ -6,6 +6,7 @@ import {
     DefaultLanzerCampaignRunner,
     DefaultLanzerService
 } from 'lanzer';
+import { withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
 import type {
     LanzerDocumentResult,
     LanzerDslSkillReference,
@@ -148,7 +149,9 @@ export class LoxLanzerCampaignRunner extends DefaultLanzerCampaignRunner {
         const result = super.collectDocumentResult(document);
         return {
             ...result,
-            issues: result.issues.filter(i => i.kind !== 'diagnostic' || (i.severity ?? 1) === 1)
+            issues: result.issues
+                .filter(i => i.kind !== 'diagnostic' || (i.severity ?? 1) === 1)
+                .map(withLoxDiagnosticCode)
         };
     }
 }

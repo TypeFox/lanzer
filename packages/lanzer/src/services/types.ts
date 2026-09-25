@@ -28,6 +28,16 @@ export interface LanzerDocumentValidationOptions {
 export interface LanzerDocumentIssue {
     kind: 'lexer-error' | 'parser-error' | 'diagnostic';
     message: string;
+    /**
+     * Stable identifier for *what kind of thing went wrong*, for grouping failures across runs.
+     *
+     * Taken from the host's own diagnostic when it sets one. Most Langium languages do not — it is
+     * optional in LSP and `langium-cli` does not scaffold it — so a host integration can assign
+     * codes instead by overriding {@link LanzerCampaignRunner.collectDocumentResult}, without the
+     * language itself being touched. Absent when neither supplies one, in which case the message
+     * is all there is to group by.
+     */
+    code?: string;
     severity?: number;
     line?: number;
     character?: number;

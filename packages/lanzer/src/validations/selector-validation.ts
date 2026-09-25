@@ -8,11 +8,11 @@ import {
     type AstNode,
     type AstReflection,
     type LangiumCoreServices,
-    type LangiumDocuments,
     type ValidationAcceptor
 } from 'langium';
 import { interpretAstReflection } from 'langium/grammar';
 import * as ast from '../generated/ast.js';
+import { hasStringName } from '../util/guards.js';
 import { buildContainmentGraph, type ContainmentGraph } from '../grammar/reachability.js';
 
 interface SelectorValidationContext {
@@ -203,7 +203,7 @@ export class LanzerSelectorValidator {
     }
 
     protected async loadGrammars(file: ast.CampaignFile): Promise<GrammarAST.Grammar[]> {
-        const documents = this.services.shared.workspace.LangiumDocuments as LangiumDocuments;
+        const documents = this.services.shared.workspace.LangiumDocuments;
         const builder = this.services.shared.workspace.DocumentBuilder;
         const baseDir = this.fileBaseDir(file);
         if (!baseDir) return [];
@@ -258,8 +258,8 @@ function resolveAstType(node: AstNode | undefined): string {
     if (GrammarAST.isInferredType(node) || GrammarAST.isInterface(node) || GrammarAST.isType(node)) {
         return node.name;
     }
-    if ('name' in node && typeof (node as { name?: unknown }).name === 'string') {
-        return (node as { name: string }).name;
+    if (hasStringName(node)) {
+        return node.name;
     }
     return '<unresolved>';
 }
@@ -328,7 +328,7 @@ function mergeReflections(reflections: AstReflection[]): AstReflection {
     // Lightweight composite — for authoring validation only, doesn't need subtype caches.
     const merged = reflections[0];
     for (let i = 1; i < reflections.length; i++) {
-        Object.assign((merged as unknown as { types: Record<string, unknown> }).types, reflections[i].types);
+        Object.assign(merged.types, reflections[i].types);
     }
     return merged;
 }

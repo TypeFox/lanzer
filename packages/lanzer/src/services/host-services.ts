@@ -135,8 +135,9 @@ export function createLanzerHostServices<THost extends LangiumServices = Langium
     }
     return {
         shared,
+        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
         host: hostServices as unknown as THost,
-        Lanzer: Lanzer as unknown as LanzerServices,
+        Lanzer,
         grammar
     };
 }

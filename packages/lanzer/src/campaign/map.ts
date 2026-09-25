@@ -15,9 +15,14 @@ import type {
     SymbolRequirement
 } from '../generated/ast.js';
 import type { LanzerDocumentSpec, LanzerWorkspaceFolder } from '../services/types.js';
+import { asLiteral, hasStringName } from '../util/guards.js';
+import {
+    LANZER_COMBINATORS,
+    LANZER_PSEUDO_CLASS_KINDS,
+    LANZER_VALUE_PREDICATE_OPS
+} from './model.js';
 import type {
     LanzerCampaignSpec,
-    LanzerCombinator,
     LanzerCountRequirementSpec,
     LanzerCrossRefPredicate,
     LanzerFileSpec as LanzerRuntimeFileSpec,
@@ -179,11 +184,16 @@ function mapForbidRequirement(requirement: ForbidRequirement): LanzerForbidRequi
 
 function mapSelector(selector: Selector): LanzerSelector {
     return {
-        leadingCombinator: selector.leadingCombinator
-            ? (selector.leadingCombinator as LanzerCombinator)
-            : undefined,
+        leadingCombinator: asLiteral(selector.leadingCombinator, LANZER_COMBINATORS),
         parts: selector.parts.map((part) => mapSelectorPart(part)),
-        combinators: selector.combinators.map((combinator) => combinator as LanzerCombinator)
+        // One combinator sits between each pair of parts, so this array has to stay the same
+        // length as `parts` — a value the model no longer lists cannot simply be dropped. It
+        // falls back to the direct-child combinator, the stricter of the two: a requirement that
+        // should have matched then fails and is reported, rather than passing on a selector
+        // nobody meant to write.
+        combinators: selector.combinators.map(
+            (combinator) => asLiteral(combinator, LANZER_COMBINATORS) ?? '>'
+        )
     };
 }
 
@@ -213,7 +223,7 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
         const value: LanzerValuePredicate = {
             kind: 'value',
             property: predicate.property,
-            op: predicate.op as LanzerValuePredicate['op'],
+            op: asLiteral(predicate.op, LANZER_VALUE_PREDICATE_OPS) ?? '=',
             value: normalizeRequiredString(predicate.value ?? '""')
         };
         return value;
@@ -227,7 +237,7 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
 
 function mapPseudoClass(pseudo: PseudoClass): LanzerPseudoClass {
     return {
-        kind: pseudo.kind as LanzerPseudoClass['kind'],
+        kind: asLiteral(pseudo.kind, LANZER_PSEUDO_CLASS_KINDS) ?? 'has',
         selector: mapSelector(pseudo.selector)
     };
 }
@@ -250,8 +260,8 @@ function resolveAstType(node: AstNode | undefined): string {
     if (GrammarAST.isInferredType(node) || GrammarAST.isInterface(node) || GrammarAST.isType(node)) {
         return node.name;
     }
-    if ('name' in node && typeof (node as { name?: unknown }).name === 'string') {
-        return (node as { name: string }).name;
+    if (hasStringName(node)) {
+        return node.name;
     }
     return '<unresolved>';
 }

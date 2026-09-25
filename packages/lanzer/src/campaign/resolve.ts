@@ -14,9 +14,11 @@ export async function resolveLanzerCampaignFile(
     resolveOptions: ResolveLanzerCampaignOptions = {}
 ): Promise<ResolveLanzerCampaignFileResult> {
     const loaded = await loadLanzerDocumentFromFile(filePath, loadOptions);
-    const campaigns = mapLanzerCampaignFile(loaded.model, {
-        sourceUri: loaded.document.uri.toString()
-    });
+    // No campaign root means nothing to resolve. `loaded.issues` already carries the parse
+    // errors that explain it, so this reports an empty result rather than a second failure.
+    const campaigns = loaded.model
+        ? mapLanzerCampaignFile(loaded.model, { sourceUri: loaded.document.uri.toString() })
+        : [];
 
     return {
         ...loaded,

@@ -8,6 +8,6 @@ campaign classesDemo {
     file modelFile at "src/model.lox" generates LoxProgram {
         require Class[name="Counter"]
         require MethodMember[name="bump"]
-        min 1 Class
+        min 5 Class
     }
 }
