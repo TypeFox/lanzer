@@ -324,7 +324,9 @@ instead:
 
 The JSON adds per-run token/cost accounting, every tool call with timings, and diagnostics counted
 by code — so a suite run answers "how many succeeded, and where did the rest fail" directly. Its
-`nearMisses` field holds the same expected, missing and unexpected lists for each near-miss file.
+`nearMisses` field holds the same expected, missing and unexpected lists for each near-miss file,
+and a near-miss file's entry in `documents` is marked `expectsDiagnostics`, since the diagnostics
+listed there are the ones it was meant to produce.
 
 ### 2. Library fast path
 
