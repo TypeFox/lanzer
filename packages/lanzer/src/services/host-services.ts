@@ -10,7 +10,8 @@ import {
     createDefaultSharedModule,
     type DefaultSharedModuleContext,
     type LangiumServices,
-    type LangiumSharedServices
+    type LangiumSharedServices,
+    type PartialLangiumSharedServices
 } from 'langium/lsp';
 import {
     LangiumGrammarGeneratedModule,
@@ -46,6 +47,12 @@ import type {
 export interface LanzerHostLanguage<THost extends LangiumServices> {
     /** langium-cli generated shared module, e.g. `LoxGeneratedSharedModule`. */
     generatedSharedModule: Module<LangiumSharedServices, LangiumGeneratedSharedCoreServices>;
+    /**
+     * The host language's own shared module, for a language that customises shared services — e.g.
+     * a workspace manager that loads a standard library before anything is linked. Omit it when the
+     * language only has the generated one.
+     */
+    sharedModule?: Module<LangiumSharedServices, PartialLangiumSharedServices>;
     /**
      * Build the host language's services on Lanzer's shared container. This is the same `inject`
      * the language's own `create<Lang>Services` performs, with `shared` handed in instead of
@@ -102,6 +109,7 @@ export function createLanzerHostServices<THost extends LangiumServices>(
     const shared = inject(
         createDefaultSharedModule(context),
         host.generatedSharedModule,
+        host.sharedModule ?? {},
         LanzerGeneratedSharedModule,
         LangiumGrammarGeneratedSharedModule,
         {
