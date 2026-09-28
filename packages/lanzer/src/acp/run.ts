@@ -684,10 +684,16 @@ interface WorkspaceSnapshot {
 function promptToolNames(toolkit: LanzerToolkit | undefined): LanzerPromptToolNames | undefined {
     if (!toolkit) return undefined;
     return {
-        ...(toolkit.validate ? { validate: 'mcp__lanzer__validate' } : {}),
-        ...(toolkit.grammarReference ? { grammarReference: 'mcp__lanzer__grammar_reference' } : {})
+        ...(toolkit.validate ? { validate: LANZER_TOOL_PROMPT_NAMES.validate } : {}),
+        ...(toolkit.grammarReference ? { grammarReference: LANZER_TOOL_PROMPT_NAMES.grammarReference } : {})
     };
 }
+
+/** Every Lanzer tool by the name the agent sees, as `mcp__lanzer__<tool>`. */
+export const LANZER_TOOL_PROMPT_NAMES = {
+    validate: 'mcp__lanzer__validate',
+    grammarReference: 'mcp__lanzer__grammar_reference'
+} as const satisfies Required<LanzerPromptToolNames>;
 
 export async function runLanzerAgentTaskOverAcp(
     job: LanzerGenerationJob,

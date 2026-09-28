@@ -1,20 +1,22 @@
 import { Command } from 'commander';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { NodeFileSystem } from 'langium/node';
 import {
-    buildLanzerAgentTask,
     buildLanzerGenerationJobs,
     describePermissionPolicy,
     findLanzerGenerationJob,
     loadLanzerDocumentFromFile,
     buildLanzerSuiteReport,
     permissiveLanzerPolicy,
+    previewLanzerCampaignTask,
     renderLanzerRunSummary,
     renderLanzerSuiteSummary,
     resolveAcpOptionsFromEnv,
     resolveLanzerCampaignFile,
     resolvePermissionPolicy
 } from 'lanzer';
+import { createLanzerLoxServices } from './lox-host.js';
 import { runLoxCampaignFile } from './run-campaign.js';
 
 /** Validate a campaign file and print the result (mirrors `lanzer validate`). */
@@ -66,11 +68,23 @@ async function planAction(
         process.exitCode = 1;
         return;
     }
+    // One prompt per campaign — `generate` sends one for the whole file set — built with the Lox
+    // policy and `write-lox` skill exactly as `generate` builds it.
+    const prompts: { campaign: string; prompt: string }[] = [];
+    if (options.prompt) {
+        const service = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer.Lanzer;
+        const wanted = new Set(selected.map((job) => job.campaignName));
+        for (const campaign of result.resolvedCampaigns.filter((resolved) => wanted.has(resolved.campaign.name))) {
+            prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service)).prompt });
+        }
+    }
+
     if (options.json) {
         console.log(JSON.stringify({
             ok: true,
             uri: result.document.uri.toString(),
-            jobs: selected.map((job) => options.prompt ? buildLanzerAgentTask(job) : job)
+            jobs: selected,
+            ...(options.prompt ? { prompts } : {})
         }, null, 2));
         return;
     }
@@ -80,11 +94,10 @@ async function planAction(
         console.log(`  root rule: ${job.rootRule}`);
         if (job.workspaceRoot) console.log(`  workspace: ${job.workspaceRoot}`);
         if (job.requirements.length > 0) console.log(`  requirements: ${job.requirements.length}`);
-        if (options.prompt) {
-            console.log('\nPrompt');
-            console.log(buildLanzerAgentTask(job).prompt);
-            console.log('');
-        }
+    }
+    for (const { campaign, prompt } of prompts) {
+        console.log(`\nPrompt for campaign ${campaign}`);
+        console.log(prompt);
     }
 }
 
