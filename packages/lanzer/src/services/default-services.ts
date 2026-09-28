@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ensureLanzerGrammarReferenceFile } from '../grammar/cache.js';
+import { CompositeAstReflection } from '../grammar/composite-reflection.js';
 import {
-    AbstractAstReflection,
     GrammarAST,
     URI,
-    type AstMetaData,
     type AstReflection,
     type LangiumDocument
 } from 'langium';
@@ -194,15 +193,6 @@ export class DefaultLanzerService<
             }
         }
         return grammars;
-    }
-}
-
-class CompositeAstReflection extends AbstractAstReflection {
-    override readonly types: AstMetaData;
-
-    constructor(reflections: AstReflection[]) {
-        super();
-        this.types = Object.assign({}, ...reflections.map((r) => r.types));
     }
 }
 

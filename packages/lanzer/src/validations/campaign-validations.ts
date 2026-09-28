@@ -49,7 +49,7 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
     checkUniqueArtifactPaths = (node: ast.Campaign, accept: ValidationAcceptor): void => {
         const seen = new Map<string, ast.FileSpec | ast.SupportFileSpec>();
         for (const artifact of [...node.files, ...node.supportFiles]) {
-            const normalizedPath = normalizeQuotedString(artifact.path);
+            const normalizedPath = artifact.path.trim();
             if (seen.has(normalizedPath)) {
                 accept('error', `Duplicate file path ${artifact.path} in campaign '${node.name}'.`, {
                     node: artifact,
@@ -62,7 +62,7 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
     };
 
     checkNonEmptyWorkspaceRoot = (node: ast.Campaign, accept: ValidationAcceptor): void => {
-        if (node.workspaceRoot !== undefined && normalizeQuotedString(node.workspaceRoot).length === 0) {
+        if (node.workspaceRoot !== undefined && node.workspaceRoot.trim().length === 0) {
             accept('error', 'Workspace roots must not be empty.', {
                 node,
                 property: 'workspaceRoot'
@@ -80,22 +80,11 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
     };
 
     checkNonEmptyImportPath = (node: ast.GrammarImport, accept: ValidationAcceptor): void => {
-        if (normalizeQuotedString(node.path).length === 0) {
+        if (node.path.trim().length === 0) {
             accept('error', 'Grammar import paths must not be empty.', {
                 node,
                 property: 'path'
             });
         }
     };
-}
-
-function normalizeQuotedString(value: string): string {
-    if (value.length >= 2) {
-        const first = value[0];
-        const last = value[value.length - 1];
-        if ((first === '"' || first === '\'') && last === first) {
-            return value.slice(1, -1).trim();
-        }
-    }
-    return value.trim();
 }
