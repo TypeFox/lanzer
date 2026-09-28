@@ -2,7 +2,10 @@ import { describe, expect, test } from 'vitest';
 import { buildLanzerGenerationJobs } from '../src/campaign/jobs.js';
 import { resolveLanzerCampaign } from '../src/campaign/map.js';
 import { buildLanzerCampaignTask } from '../src/campaign/prompt.js';
-import type { LanzerExecutionResult } from '../src/services/types.js';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { LanzerExecutionRequest, LanzerExecutionResult } from '../src/services/types.js';
 import { validateBehaviour } from '../src/validations/behaviour-validations.js';
 import { loadCampaign, loadCampaignSpecs, parseMiniDocument } from './helpers.js';
 
@@ -12,6 +15,19 @@ function campaignWithRun(runBlock: string): string {
         'campaign demo {',
         '    workspace "out"',
         '    file main at "main.mini" generates Module {}',
+        `    ${runBlock}`,
+        '}'
+    ].join('\n');
+}
+
+/** A campaign that also declares a support file `driver`, e.g. a fixed test harness. */
+function withDriver(runBlock: string, workspace = 'out'): string {
+    return [
+        'import "mini.langium"',
+        'campaign demo {',
+        `    workspace ${JSON.stringify(workspace)}`,
+        '    file main at "main.mini" generates Module {}',
+        '    support driver at "driver.mini" description "Calls the generated code and prints results."',
         `    ${runBlock}`,
         '}'
     ].join('\n');
@@ -27,7 +43,8 @@ describe('run blocks in a campaign', () => {
             'run main { expect runs expect output "ok" expect output contains "o" expect not output matches "^x" }'
         ));
         expect(campaign.runs).toEqual([{
-            fileAlias: 'main',
+            entryAlias: 'main',
+            entryKind: 'generated',
             expectations: [
                 { kind: 'runs' },
                 { kind: 'output', mode: 'exact', value: 'ok', negated: false },
@@ -37,10 +54,19 @@ describe('run blocks in a campaign', () => {
         }]);
     });
 
-    test('must name a declared file', async () => {
+    test('must name a declared file: an unknown entry is a Lanzer error', async () => {
         expect(await messages('run nope { expect runs }')).toEqual([
-            expect.stringContaining("Could not resolve reference to FileSpec named 'nope'")
+            expect.stringContaining("Could not resolve reference to RunEntry named 'nope'")
         ]);
+    });
+
+    test('may start from a support file, such as a test driver', async () => {
+        const [campaign] = await loadCampaignSpecs(withDriver('run driver { expect output "ok" }'));
+        expect(campaign.runs).toEqual([{
+            entryAlias: 'driver',
+            entryKind: 'support',
+            expectations: [{ kind: 'output', mode: 'exact', value: 'ok', negated: false }]
+        }]);
     });
 
     test('reject a pattern that is not a regular expression', async () => {
@@ -58,15 +84,21 @@ describe('run blocks in a campaign', () => {
         const [campaign] = await loadCampaignSpecs(campaignWithRun('run main { expect output "1\\n2" expect not output contains "x" }'));
         const prompt = buildLanzerCampaignTask(buildLanzerGenerationJobs(resolveLanzerCampaign(campaign))).prompt;
         expect(prompt).toContain('Behaviour checks — once the files are valid, Lanzer runs each program below and checks what it prints:');
-        expect(prompt).toMatch(/- run main \(.*main\.mini\):\n {2}- MUST run to completion, without a runtime error or timeout\.\n {2}- output MUST be exactly "1\\n2"/);
+        expect(prompt).toMatch(/- run from main \(generated file, .*main\.mini\):\n {2}- MUST run to completion, without a runtime error or timeout\.\n {2}- output MUST be exactly "1\\n2"/);
         expect(prompt).toContain('  - output MUST NOT contain "x".');
+    });
+
+    test('mark a support-file entry as provided and not to be changed', async () => {
+        const [campaign] = await loadCampaignSpecs(withDriver('run driver { expect runs }'));
+        const prompt = buildLanzerCampaignTask(buildLanzerGenerationJobs(resolveLanzerCampaign(campaign))).prompt;
+        expect(prompt).toMatch(/- run from driver \(support file, provided — do not change it, .*driver\.mini\):/);
     });
 });
 
 describe('checking behaviour', () => {
     const ran = (output: string): LanzerExecutionResult => ({ completed: true, output, timedOut: false, durationMs: 1 });
 
-    async function check(runBlock: string, execute?: (entry: unknown) => Promise<LanzerExecutionResult>, generated = true) {
+    async function check(runBlock: string, execute?: (request: LanzerExecutionRequest) => Promise<LanzerExecutionResult>, generated = true) {
         const [campaign] = await loadCampaignSpecs(campaignWithRun(runBlock));
         const documents = generated ? [(await parseMiniDocument('fn main() { return; }', 'main.mini', campaign)).document] : [];
         return validateBehaviour(campaign, documents, execute);
@@ -96,13 +128,36 @@ describe('checking behaviour', () => {
         expect(result?.issues).toEqual(["Running 'main' failed in the host language: interpreter crashed"]);
     });
 
-    test('the entry passed to the host is the run block\'s file', async () => {
-        let seen: unknown;
-        await check('run main { expect runs }', async (entry) => {
-            seen = entry;
+    test('the host is given the workspace, the declared entry and every document', async () => {
+        let seen: LanzerExecutionRequest | undefined;
+        await check('run main { expect runs }', async (request) => {
+            seen = request;
             return ran('');
         });
-        expect(seen).toMatchObject({ uri: expect.objectContaining({ path: expect.stringMatching(/\/out\/main\.mini$/) }) });
+        expect(seen?.workspaceRoot).toMatch(/\/fixtures\/out$/);
+        expect(seen?.entry).toMatchObject({ alias: 'main', kind: 'generated', path: expect.stringMatching(/\/fixtures\/out\/main\.mini$/) });
+        expect(seen?.entry.document?.uri.path).toMatch(/\/out\/main\.mini$/);
+        expect(seen?.documents).toHaveLength(1);
+    });
+
+    test('a support-file entry in another language is passed by path, with no document', async () => {
+        const workspace = await mkdtemp(join(tmpdir(), 'lanzer-driver-'));
+        await writeFile(join(workspace, 'driver.mini'), 'fn main() { return; }', 'utf8');
+        const [campaign] = await loadCampaignSpecs(withDriver('run driver { expect runs }', workspace));
+        let seen: LanzerExecutionRequest | undefined;
+        const result = await validateBehaviour(campaign, [], async (request) => {
+            seen = request;
+            return ran('');
+        });
+        expect(result?.ok).toBe(true);
+        expect(seen?.entry).toEqual({ alias: 'driver', kind: 'support', path: join(workspace, 'driver.mini') });
+    });
+
+    test('a support-file entry missing from disk is reported', async () => {
+        const workspace = await mkdtemp(join(tmpdir(), 'lanzer-driver-'));
+        const [campaign] = await loadCampaignSpecs(withDriver('run driver { expect runs }', workspace));
+        const result = await validateBehaviour(campaign, [], async () => ran(''));
+        expect(result?.issues).toEqual([expect.stringMatching(/^Cannot run 'driver': the support file does not exist at .*driver\.mini\.$/)]);
     });
 
     // Every expectation kind, plain and negated, both holding and failing, against one output.

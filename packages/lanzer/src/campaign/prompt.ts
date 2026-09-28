@@ -437,7 +437,9 @@ function appendBehaviourChecks(lines: string[], runs: LanzerGenerationRun[]): vo
     }
     lines.push('Behaviour checks — once the files are valid, Lanzer runs each program below and checks what it prints:');
     for (const run of runs) {
-        lines.push(`- run ${run.fileAlias} (${run.absoluteEntryPath}):`);
+        // A support entry is the campaign's own driver: the agent must not rewrite it to pass.
+        const entry = run.entryKind === 'support' ? 'support file, provided — do not change it' : 'generated file';
+        lines.push(`- run from ${run.entryAlias} (${entry}, ${run.absoluteEntryPath}):`);
         lines.push('  - MUST run to completion, without a runtime error or timeout.');
         for (const expectation of run.expectations) {
             if (expectation.kind === 'output') {

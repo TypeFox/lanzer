@@ -82,3 +82,71 @@ describe('running a generated Lox program', () => {
         expect(result.behaviour).toBeUndefined();
     });
 });
+
+/**
+ * Validate a Lox campaign built from `files` (alias → path and content), with `support` files
+ * written as-is and the given run block, all in a fresh workspace.
+ */
+async function behaviourOfWorkspace(
+    files: Record<string, { path: string; content: string }>,
+    support: Record<string, { path: string; content: string }>,
+    runBlock: string
+): Promise<LanzerCampaignValidationResult> {
+    const dir = await mkdtemp(join(tmpdir(), 'lanzer-behaviour-'));
+    const workspace = join(dir, 'ws');
+    await mkdir(workspace, { recursive: true });
+    const campaignFile = join(dir, 'campaign.lanzer');
+    await writeFile(campaignFile, [
+        `import ${JSON.stringify(LOX_GRAMMAR)}`,
+        'campaign multiFile {',
+        '    workspace "ws"',
+        ...Object.entries(files).map(([alias, file]) => `    file ${alias} at ${JSON.stringify(file.path)} generates LoxProgram {}`),
+        ...Object.entries(support).map(([alias, file]) => `    support ${alias} at ${JSON.stringify(file.path)}`),
+        `    ${runBlock}`,
+        '}'
+    ].join('\n'), 'utf8');
+    for (const file of [...Object.values(files), ...Object.values(support)]) {
+        await writeFile(join(workspace, file.path), file.content, 'utf8');
+    }
+    const resolved = await resolveLanzerCampaignFile(campaignFile, { validate: true });
+    expect(resolved.issues).toEqual([]);
+    const { Lanzer } = createLanzerLoxServices(NodeFileSystem);
+    return Lanzer.lanzer.CampaignRunner.validateCampaign(resolved.resolvedCampaigns[0].request);
+}
+
+describe('running a Lox program that spans files', () => {
+    const lib = { path: 'lib.lox', content: 'fun add(a: number, b: number): number { return a + b; }\nclass Counter { n: number }\nvar offset = 10;\nprint "lib loaded";' };
+
+    test('the entry calls functions, classes and variables another file declares', async () => {
+        const result = await behaviourOfWorkspace(
+            { lib, main: { path: 'main.lox', content: 'var c = Counter(); c.n = add(1, 2); print c.n + offset;' } },
+            {},
+            'run main { expect output "13" }'
+        );
+        expect(result.documents.every((document) => document.issues.length === 0)).toBe(true);
+        expect(result.behaviour).toMatchObject({ ok: true, runs: [{ entryAlias: 'main', execution: { output: '13\n' } }] });
+    });
+
+    test('another file\'s top-level statements are not run, only its declarations', async () => {
+        const result = await behaviourOfWorkspace(
+            { lib, main: { path: 'main.lox', content: 'print add(1, 2);' } },
+            {},
+            'run main { expect output "3" expect not output contains "lib loaded" }'
+        );
+        expect(result.behaviour?.issues).toEqual([]);
+    });
+
+    test('a support file can be the entry: a fixed driver calling the generated code', async () => {
+        const generated = { lib: { path: 'lib.lox', content: 'fun square(n: number): number { return n * n; }' } };
+        const driver = { driver: { path: 'driver.lox', content: 'print square(3);\nprint square(4);' } };
+        const passing = await behaviourOfWorkspace(generated, driver, 'run driver { expect output "9\\n16" }');
+        expect(passing.behaviour).toMatchObject({ ok: true, runs: [{ entryAlias: 'driver', execution: { output: '9\n16\n' } }] });
+
+        const wrong = await behaviourOfWorkspace(
+            { lib: { path: 'lib.lox', content: 'fun square(n: number): number { return n + n; }' } },
+            driver,
+            'run driver { expect output "9\\n16" }'
+        );
+        expect(wrong.behaviour?.issues).toEqual([`Run of 'driver': output must be exactly "9\\n16", but was "6\\n8\\n"`]);
+    });
+});

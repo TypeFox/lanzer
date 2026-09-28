@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { LangiumDocument } from 'langium';
 import type { LanzerCampaignSpec, LanzerExpectation, LanzerOutputMatchMode, LanzerRunSpec } from '../campaign/model.js';
@@ -7,7 +8,7 @@ import type {
     LanzerRunOutcome,
     LanzerService
 } from '../services/types.js';
-import { getCampaignFileAbsolutePath } from './requirement-validations.js';
+import { getCampaignFileAbsolutePath, getCampaignWorkspaceRoot } from './requirement-validations.js';
 
 /** How much of an output a finding quotes; enough to see what went wrong, not a whole log. */
 const QUOTED_OUTPUT_LIMIT = 400;
@@ -41,24 +42,37 @@ async function checkRun(
     documents: LangiumDocument[],
     execute: LanzerService['execute']
 ): Promise<LanzerRunOutcome> {
-    const fail = (failure: string): LanzerRunOutcome => ({ fileAlias: run.fileAlias, failures: [failure] });
+    const fail = (failure: string): LanzerRunOutcome => ({ entryAlias: run.entryAlias, failures: [failure] });
 
     if (!execute) {
-        return fail(`Cannot check run '${run.fileAlias}': the host language does not run programs.`);
+        return fail(`Cannot check run '${run.entryAlias}': the host language does not run programs.`);
     }
-    const file = campaign.files.find((candidate) => candidate.alias === run.fileAlias);
-    const entryPath = file ? resolve(getCampaignFileAbsolutePath(campaign, file)) : undefined;
-    const entry = documents.find((document) => resolve(document.uri.fsPath) === entryPath);
-    if (!entry) {
-        return fail(`Cannot run '${run.fileAlias}': its file was not generated.`);
+    const declared = (run.entryKind === 'support' ? campaign.supportFiles : campaign.files)
+        .find((candidate) => candidate.alias === run.entryAlias);
+    if (!declared) {
+        return fail(`Cannot run '${run.entryAlias}': it is not a declared file of the campaign.`);
+    }
+    const path = resolve(getCampaignFileAbsolutePath(campaign, declared));
+    // The parsed document, when the entry is in the host language; a host with an entry in some
+    // other form (a build file, a script) is handed its path instead. A loaded document is present
+    // whether or not it came from disk, so only an entry with neither is missing.
+    const document = documents.find((candidate) => resolve(candidate.uri.fsPath) === path);
+    if (!document && !existsSync(path)) {
+        return fail(run.entryKind === 'generated'
+            ? `Cannot run '${run.entryAlias}': its file was not generated.`
+            : `Cannot run '${run.entryAlias}': the support file does not exist at ${path}.`);
     }
 
     let execution: LanzerExecutionResult;
     try {
-        execution = await execute(entry, documents);
+        execution = await execute({
+            workspaceRoot: getCampaignWorkspaceRoot(campaign),
+            entry: { alias: run.entryAlias, kind: run.entryKind, path, ...(document ? { document } : {}) },
+            documents
+        });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        return fail(`Running '${run.fileAlias}' failed in the host language: ${reason}`);
+        return fail(`Running '${run.entryAlias}' failed in the host language: ${reason}`);
     }
 
     // Every expectation implies the program finished: output checks on a crashed run would only
@@ -66,16 +80,16 @@ async function checkRun(
     if (!execution.completed) {
         const why = execution.timedOut ? 'timed out' : `stopped on a runtime error: ${execution.error ?? 'unknown error'}`;
         return {
-            fileAlias: run.fileAlias,
+            entryAlias: run.entryAlias,
             execution,
-            failures: [`Run of '${run.fileAlias}' ${why}. Output so far: ${quote(execution.output)}`]
+            failures: [`Run of '${run.entryAlias}' ${why}. Output so far: ${quote(execution.output)}`]
         };
     }
 
     const failures = run.expectations
-        .map((expectation) => checkExpectation(run.fileAlias, expectation, execution.output))
+        .map((expectation) => checkExpectation(run.entryAlias, expectation, execution.output))
         .filter((failure): failure is string => failure !== undefined);
-    return { fileAlias: run.fileAlias, execution, failures };
+    return { entryAlias: run.entryAlias, execution, failures };
 }
 
 /** The failure an expectation reports for this output, or `undefined` when it holds. */

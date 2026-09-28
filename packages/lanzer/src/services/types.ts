@@ -72,6 +72,30 @@ export interface LanzerCampaignValidationResult {
     behaviour?: LanzerBehaviourValidationResult;
 }
 
+/**
+ * What a host needs to run a campaign's program.
+ *
+ * A request object rather than positional arguments, so that what a run can be given — arguments,
+ * stdin, environment — can grow without breaking a host that implemented it before.
+ */
+export interface LanzerExecutionRequest {
+    /** Absolute path of the workspace the program was generated into; a compiled host builds this. */
+    workspaceRoot: string;
+    /** The declared file the program is run from. */
+    entry: LanzerExecutionEntry;
+    /** Every loaded host-language document in the workspace: generated files and support files. */
+    documents: LangiumDocument[];
+}
+
+export interface LanzerExecutionEntry {
+    alias: string;
+    kind: 'generated' | 'support';
+    /** Absolute path on disk; always set, whatever language the entry is in. */
+    path: string;
+    /** The entry as a parsed document, when it is written in the host language. */
+    document?: LangiumDocument;
+}
+
 /** One run of a program, as the host language reports it. */
 export interface LanzerExecutionResult {
     /** The program finished on its own: no runtime error, no timeout. */
@@ -84,9 +108,9 @@ export interface LanzerExecutionResult {
     durationMs: number;
 }
 
-/** A `run` block's outcome: what the entry file did, and which expectations it missed. */
+/** A `run` block's outcome: what the program did, and which expectations it missed. */
 export interface LanzerRunOutcome {
-    fileAlias: string;
+    entryAlias: string;
     /** Absent when the program could not be run at all (see `failures`). */
     execution?: LanzerExecutionResult;
     failures: string[];
@@ -143,14 +167,16 @@ export interface LanzerService<
     getGenerationPolicy(job: LanzerGenerationJob): Promise<LanzerGenerationPolicy | undefined>;
     dslSkill(job: LanzerGenerationJob): Promise<LanzerDslSkillReference | undefined>;
     /**
-     * Run a program, starting from `entry`, with `documents` being every generated file in case the
-     * program spans several. Optional: a host that cannot run its language leaves it out, and a
-     * campaign with `run` blocks then fails at the `behaviour` stage rather than passing unchecked.
+     * Run the campaign's program from `request.entry`, with the whole workspace available: an
+     * interpreter runs the entry with the other documents' definitions in scope; a compiled
+     * language builds `request.workspaceRoot` and runs its main. Optional: a host that cannot run
+     * its language leaves it out, and a campaign with `run` blocks then fails at the `behaviour`
+     * stage rather than passing unchecked.
      *
      * The code is agent-generated and untrusted. The host bounds it — time, output, and whatever
      * its language could reach outside the process.
      */
-    execute?(entry: LangiumDocument, documents: LangiumDocument[]): Promise<LanzerExecutionResult>;
+    execute?(request: LanzerExecutionRequest): Promise<LanzerExecutionResult>;
 }
 
 export interface LanzerCampaignRunRequest {
