@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { EmptyFileSystem } from 'langium';
 import { runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
 import { createLanzerServices } from '../src/lanzer-module.js';
-import { runLanzerCampaign } from '../src/services/campaign-run.js';
+import { previewLanzerCampaignTask, runLanzerCampaign } from '../src/services/campaign-run.js';
 import { DefaultLanzerService } from '../src/services/default-services.js';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../src/services/types.js';
 import type { LanzerResolvedCampaign } from '../src/campaign/model.js';
@@ -179,8 +179,9 @@ describe('the DSL skill', () => {
         ]]), 'utf8');
         await writeFile(logPath, '', 'utf8');
 
+        const service = new SkillOnlyService({ name: 'write-mini', path: skillDir });
         const run = await runLanzerCampaign(resolved, {
-            service: new SkillOnlyService({ name: 'write-mini', path: skillDir }),
+            service,
             runner: { validateCampaign: async () => ({ ok: true, documents: [] }) }
         }, {
             command: process.execPath,
@@ -195,6 +196,9 @@ describe('the DSL skill', () => {
         expect(log.map((entry) => [entry.op, entry.ok])).toEqual([['read', true], ['write', true], ['write', false]]);
         expect(await readFile(skillFile, 'utf8')).toBe('# Writing Mini');
         expect(run.report?.ok).toBe(true);
+
+        // What `plan --prompt` shows is exactly what the agent was sent.
+        expect((await previewLanzerCampaignTask(resolved, service)).prompt).toBe(run.task.prompt);
     });
 });
 

@@ -1,9 +1,11 @@
 import {
+    LANZER_TOOL_PROMPT_NAMES,
     LanzerRunStageError,
     runLanzerCampaignTaskOverAcp,
     type LanzerAgentRunResult
 } from '../acp/run.js';
-import { buildLanzerCampaignTask } from '../campaign/prompt.js';
+import { buildLanzerCampaignTask, type LanzerCampaignTaskPayload } from '../campaign/prompt.js';
+import type { LanzerGenerationJob } from '../campaign/jobs.js';
 import {
     resolvePermissionPolicy,
     type LanzerPermissionPolicy
@@ -16,7 +18,12 @@ import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { buildLanzerGenerationJobs } from '../campaign/jobs.js';
 import type { LanzerResolvedCampaign } from '../campaign/model.js';
-import type { LanzerCampaignRunner, LanzerService } from './types.js';
+import type {
+    LanzerCampaignRunner,
+    LanzerDslSkillReference,
+    LanzerGenerationPolicy,
+    LanzerService
+} from './types.js';
 
 /**
  * ACP transport + retry options for {@link runLanzerCampaign}. This is the subset of the
@@ -63,6 +70,39 @@ export interface RunLanzerCampaignDeps<
     runner: TRunner;
 }
 
+/** What a campaign run takes from the host before the agent starts. */
+interface PreparedLanzerCampaign {
+    jobs: LanzerGenerationJob[];
+    policy: LanzerGenerationPolicy | undefined;
+    dslSkill: LanzerDslSkillReference | undefined;
+}
+
+async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: LanzerService): Promise<PreparedLanzerCampaign> {
+    const jobs = buildLanzerGenerationJobs(resolved);
+    if (jobs.length === 0) {
+        throw new Error('Campaign produced no generation jobs.');
+    }
+    return {
+        jobs,
+        policy: await service.getGenerationPolicy(jobs[0]),
+        dslSkill: await service.dslSkill(jobs[0])
+    };
+}
+
+/**
+ * The task {@link runLanzerCampaign} would send the agent for this campaign, without running it.
+ *
+ * Built from the same host policy, DSL skill and tool set as a run — every run serves both Lanzer
+ * tools — so a `plan --prompt` preview is the prompt `generate` sends, not an approximation of it.
+ */
+export async function previewLanzerCampaignTask(
+    resolved: LanzerResolvedCampaign,
+    service: LanzerService
+): Promise<LanzerCampaignTaskPayload> {
+    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, service);
+    return buildLanzerCampaignTask(jobs, policy, dslSkill, LANZER_TOOL_PROMPT_NAMES);
+}
+
 /**
  * **Fast path** for running a single resolved campaign end-to-end.
  *
@@ -83,13 +123,7 @@ export async function runLanzerCampaign(
     deps: RunLanzerCampaignDeps,
     acp: LanzerAcpOptions
 ): Promise<LanzerAgentRunResult> {
-    const jobs = buildLanzerGenerationJobs(resolved);
-    if (jobs.length === 0) {
-        throw new Error('Campaign produced no generation jobs.');
-    }
-
-    const policy = await deps.service.getGenerationPolicy(jobs[0]);
-    const dslSkill = await deps.service.dslSkill(jobs[0]);
+    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, deps.service);
 
     // The agent gets the campaign runner itself, not a copy of it. `validate` below flattens the
     // same result into the strings a fix prompt needs; the toolkit hands over the structured form.
