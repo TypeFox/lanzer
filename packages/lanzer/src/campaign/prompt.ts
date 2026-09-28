@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
 import type { LanzerGenerationJob } from './jobs.js';
 import type { LanzerRequirementSpec } from './model.js';
@@ -32,6 +33,29 @@ export type LanzerTaskPayload = LanzerAgentTaskPayload | LanzerCampaignTaskPaylo
 export interface LanzerPromptToolNames {
     validate?: string;
     grammarReference?: string;
+}
+
+/**
+ * Point the agent at the DSL skill, by name and by location.
+ *
+ * The name works when the agent has the skill installed where it looks for skills; the location
+ * works everywhere, including for agents with no skill system and for a skill shipped in the host's
+ * repository rather than installed. Giving only the name sends the agent looking for something it
+ * may not have.
+ */
+function appendSkillInstructions(lines: string[], dslSkill: LanzerDslSkillReference | undefined): void {
+    if (dslSkill?.name) {
+        lines.push(`Use the installed agent skill named "${dslSkill.name}" before generating.`);
+    }
+    if (dslSkill?.path) {
+        const skillFile = join(dslSkill.path, 'SKILL.md');
+        lines.push(dslSkill.name
+            ? `If that skill is not available to you, read ${skillFile} directly, with the files it refers to in ${dslSkill.path}.`
+            : `Read the DSL skill at ${skillFile} before generating, with the files it refers to in ${dslSkill.path}.`);
+    }
+    if (dslSkill?.name || dslSkill?.path) {
+        lines.push('Use that skill alongside the grammar reference to understand host-specific language usage and idioms.');
+    }
 }
 
 /**
@@ -162,10 +186,7 @@ function renderPrompt(
     if (policy?.grammarReferencePath) {
         lines.push(`Read the grammar reference from this absolute path before generating: ${policy.grammarReferencePath}`);
     }
-    if (dslSkill?.name) {
-        lines.push(`Use the installed agent skill named "${dslSkill.name}" before generating.`);
-        lines.push('Use that skill alongside the grammar reference to understand host-specific language usage and idioms.');
-    }
+    appendSkillInstructions(lines, dslSkill);
     lines.push(`You must write the primary generated file to this absolute path: ${job.absoluteOutputPath}`);
     if (job.siblingGeneratedFiles.length > 0) {
         lines.push('You may also create or update other declared generated files listed below if needed for correctness.');
@@ -271,10 +292,7 @@ function renderCampaignPrompt(
     if (policy?.grammarReferencePath) {
         lines.push(`Read the grammar reference from this absolute path before generating: ${policy.grammarReferencePath}`);
     }
-    if (dslSkill?.name) {
-        lines.push(`Use the installed agent skill named "${dslSkill.name}" before generating.`);
-        lines.push('Use that skill alongside the grammar reference to understand host-specific language usage and idioms.');
-    }
+    appendSkillInstructions(lines, dslSkill);
     lines.push('You must write the following generated files in this run:');
     for (const job of jobs) {
         lines.push(`- ${job.fileAlias}: ${job.absoluteOutputPath} [${job.rootRule}]`);
