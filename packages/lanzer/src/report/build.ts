@@ -97,6 +97,9 @@ function determineFailedStage(
     if ((validation?.campaign?.issues.length ?? 0) > 0) {
         return 'requirements';
     }
+    if ((validation?.behaviour?.issues.length ?? 0) > 0) {
+        return 'behaviour';
+    }
     if ((validation?.workspace?.issues.length ?? 0) > 0) {
         return 'scope';
     }
@@ -135,6 +138,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
             issues: document.issues
         })),
         campaignIssues: validation?.campaign?.issues ?? [],
+        behaviourIssues: validation?.behaviour?.issues ?? [],
         workspaceIssues: [...(validation?.workspace?.issues ?? []), ...fileSetIssues],
         extraFiles: input.extraFiles ?? [],
         toolCalls: run.toolCalls,

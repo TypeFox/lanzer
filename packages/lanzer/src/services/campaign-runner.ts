@@ -1,6 +1,7 @@
 import type { LangiumDocument } from 'langium';
 import type { LangiumServices, LangiumSharedServices } from 'langium/lsp';
 import { diagnosticCode } from '../util/guards.js';
+import { validateBehaviour } from '../validations/behaviour-validations.js';
 import type {
     LanzerCampaignRunRequest,
     LanzerCampaignRunner,
@@ -34,15 +35,23 @@ export class DefaultLanzerCampaignRunner<
         const results = documents.map((document) => this.collectDocumentResult(document));
         const workspace = await lanzer.validateWorkspace(request, documents);
         const campaign = await lanzer.validateCampaignResult(request, documents);
+        const valid =
+            results.every((result) => result.issues.length === 0) &&
+            (workspace?.ok ?? true) &&
+            (campaign?.ok ?? true);
+
+        // Only a program that is already valid is run: one that does not parse or type-check has
+        // nothing to say about behaviour, and running it would only restate those findings.
+        const behaviour = valid && request.campaign
+            ? await validateBehaviour(request.campaign, documents, lanzer.execute?.bind(lanzer))
+            : undefined;
 
         return {
-            ok:
-                results.every((result) => result.issues.length === 0) &&
-                (workspace?.ok ?? true) &&
-                (campaign?.ok ?? true),
+            ok: valid && (behaviour?.ok ?? true),
             documents: results,
             workspace,
-            campaign
+            campaign,
+            ...(behaviour ? { behaviour } : {})
         };
     }
 

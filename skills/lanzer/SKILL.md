@@ -142,6 +142,31 @@ Lanzer's authoring validator catches structurally impossible selectors **before*
 
 If you write a selector and Lanzer says it's not reachable, the path you described literally cannot occur in the host grammar's AST. Re-check the grammar — typically you need a different rule or `>>` instead of `>`.
 
+## Behaviour: `run` blocks
+
+Requirements check what the generated code *is*; a `run` block checks what it *does*. After the
+requirements, a campaign may list any number of runs, each naming a declared file as the program's
+entry (the host receives every generated file, so multi-file programs work):
+
+```lanzer
+    run mainFile {
+        expect runs                            // finishes: no runtime error, no timeout
+        expect output "1\n2\n6\n"              // exact; trailing spaces and blank lines ignored
+        expect output contains "6"             // substring; repeat as needed
+        expect output matches "^(\\d+\\n)+$"  // regex over the whole output
+        expect not output contains "error"     // `not` inverts any output check
+    }
+```
+
+- Every expectation in a block must hold, and every run must first finish on its own.
+- Runs happen only once the files are valid; a failure is reported at the `behaviour` stage, with
+  the expected and actual output.
+- The regex is a string, so backslashes are doubled.
+- The host language has to be able to run programs (its Lanzer service implements `execute`; Lox
+  does). If it cannot, a campaign with `run` blocks fails rather than passing unchecked.
+- The agent sees the expected output. Pair it with requirements that force the computation (e.g.
+  `require FunctionDeclaration[name="factorial"]`) so printing the literal answer is not enough.
+
 ## Authoring rules
 
 - Always include the `import` line — selectors will not link otherwise.

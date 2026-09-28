@@ -176,6 +176,39 @@ MCP server. The agent connects back over a loopback port guarded by a per-run to
 Both are backed by services a host integration already implements, so nothing new is asked of a
 host author. A run without them behaves exactly as before.
 
+#### Checking behaviour
+
+Requirements say what the generated code *is*; a `run` block says what it must *do*. Name a
+declared file as the program's entry, and state what running it must produce:
+
+```
+campaign factorialLox {
+    description "Print the factorials of 1 through 5, computed by a recursive function."
+    workspace "test/factorial"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        require FunctionDeclaration[name="factorial"]
+    }
+
+    run mainFile {
+        expect runs                          // finishes: no runtime error, no timeout
+        expect output "1\n2\n6\n24\n120\n"    // exact (trailing whitespace ignored)
+        expect output contains "120"         // substring
+        expect output matches "^1\\n"         // regex over the whole output
+        expect not output contains "nil"     // `not` inverts any output check
+    }
+}
+```
+
+Once the files are valid, Lanzer runs each entry through the host language and checks every
+expectation; a miss fails the run at the `behaviour` stage, with the expected and actual output in
+the fix prompt and in the agent's `validate` tool. The agent sees the expected output up front, so
+pair it with requirements that make it compute rather than print the answer. A host runs programs
+by implementing `execute` on its service (see [Plugging in your own DSL](#plugging-in-your-own-dsl));
+Lox runs them in-process with its interpreter. A campaign with `run` blocks against a host that
+cannot run programs fails rather than passing unchecked. See
+[`examples/factorial.lanzer`](packages/lanzer-lox/examples/factorial.lanzer).
+
 #### Reports
 
 `generate` prints a summary per campaign and can write the whole thing as JSON:
@@ -193,7 +226,7 @@ node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer --repo
 ```
 
 A failure names **the stage it failed at**, walking the pipeline in order — `launch`, `session`,
-`turn`, `no_output`, `syntax`, `semantics`, `requirements`, `scope` — so the report points at the
+`turn`, `no_output`, `syntax`, `semantics`, `requirements`, `behaviour`, `scope` — so the report points at the
 earliest cause rather than the loudest symptom. A file that never parsed also fails its
 requirements, and saying `requirements` for it would send you to fix the wrong thing:
 
@@ -262,9 +295,11 @@ parts:
 
 **1. A service** ([`lox-lanzer-service.ts`](packages/lanzer-lox/src/lox-lanzer-service.ts)) — extend
 `DefaultLanzerService` and override `getGenerationPolicy` (your language's required/forbidden
-practices, reference files) and `dslSkill` (point at your DSL's agent skill). Optionally extend
-`DefaultLanzerCampaignRunner` to control which diagnostics count as failures. These overrides are
-pure config — they never reach into your language's services.
+practices, reference files) and `dslSkill` (point at your DSL's agent skill). To support `run`
+blocks, also implement `execute(entry, documents)`: run the program from the entry document and
+return what it printed, whether it completed, and any error or timeout — bounding time and output,
+since the code is agent-written. Optionally extend `DefaultLanzerCampaignRunner` to control which
+diagnostics count as failures. These overrides never modify your language itself.
 
 **2. The wiring** ([`lox-host.ts`](packages/lanzer-lox/src/lox-host.ts)) — call the generic
 `createLanzerHostServices` with your language's generated shared module, its AST reflection, and a

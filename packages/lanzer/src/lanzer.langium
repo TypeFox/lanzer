@@ -17,6 +17,7 @@ Campaign:
         files+=FileSpec*
         supportFiles+=SupportFileSpec*
         requirements+=CampaignRequirement*
+        runs+=RunSpec*
     '}';
 
 FileSpec:
@@ -32,6 +33,24 @@ SupportFileSpec:
     'support' name=ID
     'at' path=STRING
     ('description' description=STRING)?;
+
+// Run an entry file and check what it does. Every expectation in the block must hold.
+RunSpec:
+    'run' file=[FileSpec:ID] '{'
+        expectations+=Expectation*
+    '}';
+
+// `expect runs` asks only that the program finish without a runtime error or timeout. An output
+// check compares the whole output (no mode), a substring (`contains`) or a regex (`matches`);
+// `not` inverts it.
+Expectation:
+    'expect' (
+        runs?='runs' |
+        (negated?='not')? 'output' (mode=OutputMatchMode)? value=STRING
+    );
+
+OutputMatchMode returns string:
+    'contains' | 'matches';
 
 CampaignRequirement:
     SymbolRequirement |

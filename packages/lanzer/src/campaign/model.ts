@@ -15,6 +15,8 @@ export interface LanzerCampaignSpec {
     files: LanzerFileSpec[];
     supportFiles: LanzerSupportFileSpec[];
     requirements: LanzerRequirementSpec[];
+    /** Entry files to run once the files are valid, and what running each must produce. */
+    runs: LanzerRunSpec[];
 }
 
 export interface LanzerFileSpec {
@@ -116,6 +118,21 @@ export interface LanzerPseudoClass {
     kind: LanzerPseudoClassKind;
     selector: LanzerSelector;
 }
+
+/** One `run` block: the declared file to run as the program's entry, and what must hold. */
+export interface LanzerRunSpec {
+    fileAlias: string;
+    expectations: LanzerExpectation[];
+}
+
+/** How an output expectation compares: the whole output, a substring, or a regex. */
+export const LANZER_OUTPUT_MATCH_MODES = ['exact', 'contains', 'matches'] as const;
+
+export type LanzerOutputMatchMode = (typeof LANZER_OUTPUT_MATCH_MODES)[number];
+
+export type LanzerExpectation =
+    | { kind: 'runs' }
+    | { kind: 'output'; mode: LanzerOutputMatchMode; value: string; negated: boolean };
 
 export interface LanzerResolvedCampaign {
     campaign: LanzerCampaignSpec;

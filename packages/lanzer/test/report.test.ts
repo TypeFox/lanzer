@@ -48,8 +48,9 @@ function verdict(
 ): LanzerCampaignValidationResult {
     const campaignIssues = extra.campaign?.issues ?? [];
     const workspaceIssues = extra.workspace?.issues ?? [];
+    const behaviourIssues = extra.behaviour?.issues ?? [];
     return {
-        ok: issues.length === 0 && campaignIssues.length === 0 && workspaceIssues.length === 0,
+        ok: issues.length === 0 && campaignIssues.length === 0 && workspaceIssues.length === 0 && behaviourIssues.length === 0,
         documents: [{ uri: 'file:///main.mini', issues }],
         ...extra
     };
@@ -98,6 +99,12 @@ describe('failed stage', () => {
 
     test('unmet requirements on valid files are requirements', async () => {
         expect(await stageOf(writtenJob, verdict([], { campaign: { ok: false, issues: ['Required selector did not match any node'] } }))).toBe('requirements');
+    });
+
+    test('a program that runs wrongly is behaviour, but only once requirements hold', async () => {
+        const behaviour = { ok: false, runs: [], issues: ["Run of 'main': output must be exactly \"1\", but was \"2\""] };
+        expect(await stageOf(writtenJob, verdict([], { behaviour }))).toBe('behaviour');
+        expect(await stageOf(writtenJob, verdict([], { behaviour, campaign: { ok: false, issues: ['unmet'] } }))).toBe('requirements');
     });
 
     test('workspace and file-set findings are scope', async () => {

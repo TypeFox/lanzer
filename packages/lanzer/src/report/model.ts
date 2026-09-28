@@ -19,6 +19,7 @@ export const LANZER_RUN_STAGES = [
     'syntax',
     'semantics',
     'requirements',
+    'behaviour',
     'scope'
 ] as const;
 
@@ -33,6 +34,7 @@ export const LANZER_RUN_STAGE_DESCRIPTIONS: Readonly<Record<LanzerRunStage, stri
     syntax: 'a generated file does not parse',
     semantics: 'a generated file parses but the language rejects it',
     requirements: 'the files are valid but the campaign requirements are unmet',
+    behaviour: 'the program runs, but not the way the campaign expects',
     scope: 'files outside the declared set were written or modified'
 };
 
@@ -79,6 +81,8 @@ export interface LanzerRunReport {
     /** Requirement and workspace failures, which are Lanzer's own rather than the language's. */
     campaignIssues: string[];
     workspaceIssues: string[];
+    /** What running the entry files showed that the `run` blocks did not expect. */
+    behaviourIssues: string[];
     /**
      * Files the agent produced that the campaign did not declare.
      *

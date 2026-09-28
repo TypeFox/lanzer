@@ -63,6 +63,40 @@ export interface LanzerCampaignValidationResult {
     documents: LanzerDocumentResult[];
     workspace?: LanzerWorkspaceValidationResult;
     campaign?: LanzerCampaignCheckValidationResult;
+    /**
+     * What running the campaign's entry files produced, checked against its `run` blocks.
+     *
+     * Absent when the campaign has no `run` blocks, and when the files are not yet valid — a
+     * program that does not parse or type-check is not run.
+     */
+    behaviour?: LanzerBehaviourValidationResult;
+}
+
+/** One run of a program, as the host language reports it. */
+export interface LanzerExecutionResult {
+    /** The program finished on its own: no runtime error, no timeout. */
+    completed: boolean;
+    /** Everything the program printed, in order. */
+    output: string;
+    /** The runtime error, when it stopped on one. */
+    error?: string;
+    timedOut: boolean;
+    durationMs: number;
+}
+
+/** A `run` block's outcome: what the entry file did, and which expectations it missed. */
+export interface LanzerRunOutcome {
+    fileAlias: string;
+    /** Absent when the program could not be run at all (see `failures`). */
+    execution?: LanzerExecutionResult;
+    failures: string[];
+}
+
+export interface LanzerBehaviourValidationResult {
+    ok: boolean;
+    runs: LanzerRunOutcome[];
+    /** Every run's failures, flattened, for fix prompts and the `validate` tool. */
+    issues: string[];
 }
 
 export interface LanzerGenerationPolicyReferenceFile {
@@ -108,6 +142,15 @@ export interface LanzerService<
     ): Promise<LanzerCampaignCheckValidationResult | undefined>;
     getGenerationPolicy(job: LanzerGenerationJob): Promise<LanzerGenerationPolicy | undefined>;
     dslSkill(job: LanzerGenerationJob): Promise<LanzerDslSkillReference | undefined>;
+    /**
+     * Run a program, starting from `entry`, with `documents` being every generated file in case the
+     * program spans several. Optional: a host that cannot run its language leaves it out, and a
+     * campaign with `run` blocks then fails at the `behaviour` stage rather than passing unchecked.
+     *
+     * The code is agent-generated and untrusted. The host bounds it — time, output, and whatever
+     * its language could reach outside the process.
+     */
+    execute?(entry: LangiumDocument, documents: LangiumDocument[]): Promise<LanzerExecutionResult>;
 }
 
 export interface LanzerCampaignRunRequest {
