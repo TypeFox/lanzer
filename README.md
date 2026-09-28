@@ -133,11 +133,29 @@ A generation run is unattended, so the agent gets what writing files needs and n
 shell commands, deleting or moving files, and reaching the network are all refused unless you ask
 for them.
 
-That default is worth one sentence of explanation. Lanzer confines the agent's writes to the
-campaign's workspace, and its reads to the workspace plus what Lanzer points it at (the grammar
-reference, the policy's reference files, the DSL skill) — judged after resolving symlinks — but that
-check only covers file access routed through the client — an agent that shells out steps around it
-entirely. Withholding `execute` is what keeps those directories a boundary rather than a suggestion.
+What actually confines the agent's file access depends on how the agent reaches the disk. ACP lets
+an agent read and write through the client (`fs/read_text_file`, `fs/write_text_file`) but does not
+require it, and asking the client's permission before a tool call is optional too. For an agent that
+does use the client, Lanzer confines writes to the campaign's workspace and reads to the workspace
+plus what Lanzer points it at (the grammar reference, the policy's reference files, the DSL skill),
+judged after resolving symlinks.
+
+Claude does not. `claude-agent-acp` (0.82.0) reads and writes through Claude Code's own tools, so for
+Claude today the limits are:
+
+- **Claude's session roots**: the workspace plus the directories Lanzer points it at. Claude keeps
+  its file tools inside them, but it treats them all alike, so the reference and skill directories
+  are writable to it, not read-only.
+- **The file-set check after the run**, over the workspace only: a declared target left unwritten, or
+  a changed support file that a `run` block starts from, fails the run. New files outside the
+  declared set are reported, and fail the run only with `strictFileSet`.
+- **The permission mode**, set through `session/set_mode`: `acceptEdits` when the policy allows
+  `edit`, `default` otherwise. Lanzer always refuses Claude's `bypassPermissions` mode, even when
+  your own Claude settings default to it.
+
+Tightening the path confinement for Claude is open work, starting with a real run to show how far
+these limits reach. Withholding `execute` stays essential either way: an agent with a shell steps around
+every one of these checks.
 
 A declared target that already exists when the run starts has to be rewritten by the agent: one left
 untouched fails the run as `no_output`, since passing validation says nothing about a file the agent
@@ -221,6 +239,41 @@ Examples, each tested to pass with a correct program and to fail with a wrong on
 [`fizzbuzz.lanzer`](packages/lanzer-lox/examples/fizzbuzz.lanzer) (every kind of `expect`), and
 [`geometry.lanzer`](packages/lanzer-lox/examples/geometry.lanzer), whose run starts from a provided
 [test driver](packages/lanzer-lox/examples/geometry/driver.lox) that calls the generated library.
+
+#### Checking diagnostics: near-miss files
+
+To test a language's validator rather than its happy path, a `file` block can say which diagnostics
+the language must reject it with. The agent then writes a program that is almost right and wrong in
+exactly that way:
+
+```
+file mainFile at "src/main.lox" generates LoxProgram {
+    require VariableDeclaration
+    expect error code "LOX_TYPE_NOT_ASSIGNABLE"
+    expect error message matches "^Duplicate identifier '\\w+'"   // names the agent picks
+    expect error code "DUP" message contains "declared twice"      // both, on one diagnostic
+    expect warning message contains "unused"
+    expect info code "STYLE_HINT"
+}
+```
+
+- The severity is `error`, `warning` or `info`, and each line gives a `code`, a `message`, or both;
+  with both, a single diagnostic must carry the code and match the message.
+- `message` compares like `expect output`: exact with no mode, `contains`, or `matches` (a regex).
+  Use a regex when the message names something the agent chooses.
+- Each line must be met by at least one diagnostic. An **error** no line accounts for fails the
+  file, since a near-miss is wrong in one way, not two; warnings and infos nobody asked for are
+  ignored. Parse errors are errors like any other.
+- Requirements still apply to a near-miss file, and every other generated file must stay valid. A
+  campaign with a near-miss file cannot have `run` blocks: its workspace is invalid on purpose.
+- Codes are the host's own, so `validate` checks only the shape of the line. A host that lists its
+  codes (Lox does) rejects an unknown one before any agent starts.
+
+The prompt asks the agent for exactly the listed mistake; fix prompts and the `validate` tool report
+only what is missing or unexpected, never the intended diagnostics themselves. A mismatch fails the
+run at the `diagnostics` stage. Example, tested to pass on the intended mistake and to fail on an
+extra error, a missing one, or a different one:
+[`near-miss.lanzer`](packages/lanzer-lox/examples/near-miss.lanzer).
 
 #### Reports
 
@@ -313,8 +366,13 @@ blocks, also implement `execute(request)`: the request carries the workspace roo
 alias, whether it is generated or support, its path, and its parsed document when it is in your
 language) and every loaded document. Run the program from the entry — however your language runs a
 project — and return what it printed, whether it completed, and any error or timeout, bounding time
-and output, since the code is agent-written. Optionally extend `DefaultLanzerCampaignRunner` to control which
-diagnostics count as failures. These overrides never modify your language itself.
+and output, since the code is agent-written. If your language has diagnostic codes, return them all
+from `diagnosticCodes()` so a campaign expecting an unknown one is rejected before an agent starts.
+Optionally extend `DefaultLanzerCampaignRunner`: override `collectDocumentResult` to attach codes to
+diagnostics that lack them (Lox does), and `failsCleanFile(issue)` to decide which issues fail an
+ordinary file (Lox fails only on errors). Decide that in `failsCleanFile`, not by dropping issues in
+`collectDocumentResult`: a dropped warning can never be matched by a near-miss file's
+`expect warning`. These overrides never modify your language itself.
 
 **2. The wiring** ([`lox-host.ts`](packages/lanzer-lox/src/lox-host.ts)) — call the generic
 `createLanzerHostServices` with your language's generated shared module, its AST reflection, and a
