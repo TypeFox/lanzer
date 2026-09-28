@@ -198,7 +198,8 @@ const CLAUDE_TOOLS_BY_KIND: Readonly<Record<LanzerToolKind, readonly string[]>> 
  *
  * `Agent` is what `Task` is called now; `Workflow` fans out sub-agents too, the worktree tools move
  * the session out of the workspace it was given, and `RemoteTrigger` and `PushNotification` reach
- * past the run. The older names stay listed for agents that still use them.
+ * past the run. `Task` stays because `claude-agent-acp` 0.82.0 still reports sub-agent calls under
+ * either name; every other entry is a current Claude Code tool.
  */
 const INTERACTIVE_ONLY_TOOLS = [
     'Agent',
