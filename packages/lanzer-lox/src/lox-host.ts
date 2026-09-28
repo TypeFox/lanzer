@@ -1,4 +1,5 @@
-import type { DefaultSharedModuleContext } from 'langium/lsp';
+import { inject } from 'langium';
+import { createDefaultModule, type DefaultSharedModuleContext } from 'langium/lsp';
 import {
     LoxAstReflection,
     LoxGeneratedModule,
@@ -29,8 +30,7 @@ export function createLanzerLoxServices(
         context,
         {
             generatedSharedModule: LoxGeneratedSharedModule,
-            generatedModule: LoxGeneratedModule,
-            module: LoxModule,
+            createServices: (shared) => inject(createDefaultModule({ shared }), LoxGeneratedModule, LoxModule),
             astReflection: () => new LoxAstReflection()
         },
         {
