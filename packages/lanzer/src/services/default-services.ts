@@ -57,6 +57,16 @@ export class DefaultLanzerService<
                 continue;
             }
 
+            // A declared file the agent never wrote, or has since removed. It is not an error to
+            // load: the requirement check reports it by alias, and the run report as `no_output`.
+            // A copy left in the store from an earlier pass would validate content that is gone.
+            if (!(await this.shared.workspace.FileSystemProvider.exists(uri))) {
+                if (this.shared.workspace.LangiumDocuments.hasDocument(uri)) {
+                    await this.shared.workspace.DocumentBuilder.update([], [uri]);
+                }
+                continue;
+            }
+
             // During an ACP generation session the agent's intermediate edits populate the
             // document store. If a cached version exists, tell the builder the file changed on
             // disk so it re-reads the final content before validation.

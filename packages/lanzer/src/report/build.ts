@@ -122,6 +122,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         campaign,
         ok: stage === undefined,
         ...(stage ? { failedStage: stage, failedStageDescription: LANZER_RUN_STAGE_DESCRIPTIONS[stage] } : {}),
+        ...(input.failure ? { failureMessage: input.failure.message } : {}),
         attempts: run.attempts,
         stopReason: run.stopReason,
         durationMs: run.durationMs,

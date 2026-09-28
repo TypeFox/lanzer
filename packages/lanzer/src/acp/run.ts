@@ -11,7 +11,7 @@ import type { CallToolResult, ContentBlock } from '@modelcontextprotocol/sdk/typ
 import type { LanzerGenerationJob } from '../campaign/jobs.js';
 import { isRecord } from '../util/guards.js';
 import { appendGroupedLanzerIssues } from './issues.js';
-import type { LanzerRunReport } from '../report/model.js';
+import type { LanzerRunReport, LanzerRunStage } from '../report/model.js';
 import { startLanzerToolHost, type LanzerToolCallRecord, type LanzerToolHost, type LanzerToolkit } from './tool-host.js';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
 import {
@@ -81,6 +81,58 @@ export interface LanzerAgentUsage {
     /** Latest cumulative cost reported by the agent. */
     costAmount?: number;
     costCurrency?: string;
+}
+
+/**
+ * A run that ended before it produced a result, and the stage of the pipeline it ended at.
+ *
+ * Thrown by the run instead of the underlying error so the caller can still report the run: which
+ * stage failed is the actionable part — a command that does not exist, an agent that refused the
+ * session, or one that died mid-turn each point somewhere different.
+ */
+export class LanzerRunStageError extends Error {
+    constructor(
+        readonly stage: Extract<LanzerRunStage, 'launch' | 'session' | 'turn'>,
+        message: string
+    ) {
+        super(message);
+        this.name = 'LanzerRunStageError';
+    }
+}
+
+/**
+ * Which step of talking to the agent is in progress, if any.
+ *
+ * A dropped connection can surface as a rejection of the connection itself rather than of the
+ * request that was waiting, so the step has to be known from outside that request. Between steps
+ * — while Lanzer validates, say — it is `undefined`, and a failure there is Lanzer's own.
+ */
+interface StageTracker {
+    current?: LanzerRunStageError['stage'];
+}
+
+/** Run one step of talking to the agent, attributing any failure to `stage`. */
+async function atStage<T>(
+    tracker: StageTracker,
+    stage: LanzerRunStageError['stage'],
+    work: () => Promise<T>
+): Promise<T> {
+    tracker.current = stage;
+    try {
+        const result = await work();
+        tracker.current = undefined;
+        return result;
+    } catch (error) {
+        // Left set: the connection's own rejection for the same failure may arrive after this one.
+        throw asStageError(error, stage);
+    }
+}
+
+function asStageError(error: unknown, stage: LanzerRunStageError['stage']): LanzerRunStageError {
+    if (error instanceof LanzerRunStageError) {
+        return error;
+    }
+    return new LanzerRunStageError(stage, error instanceof Error ? error.message : String(error));
 }
 
 export interface RunLanzerAgentTaskOptions {
@@ -656,6 +708,7 @@ async function executeLanzerTaskOverAcp(
     await mkdir(context.sessionCwd, { recursive: true });
 
     const { child: processHandle, launch } = spawnAcpProcess(options, options.cwd ?? process.cwd());
+    const stage: StageTracker = {};
     const agentLog = followAgentLog(processHandle, options.progress);
     const stream = acp.ndJsonStream(
         Writable.toWeb(processHandle.stdin),
@@ -680,7 +733,7 @@ async function executeLanzerTaskOverAcp(
         // Raced against the launch failure: a command that does not exist never answers
         // `initialize`, so without this the run would wait on a handshake that cannot arrive.
         return await Promise.race([launch, buildClientApp(client).connectWith(stream, async (agent) => {
-            await agent.request(acp.AGENT_METHODS.initialize, {
+            await atStage(stage, 'session', () => agent.request(acp.AGENT_METHODS.initialize, {
                 protocolVersion: acp.PROTOCOL_VERSION,
                 clientInfo: {
                     name: 'lanzer',
@@ -692,7 +745,7 @@ async function executeLanzerTaskOverAcp(
                         writeTextFile: true
                     }
                 }
-            });
+            }));
 
             let stopReason = 'unknown';
             let attempts = 0;
@@ -716,16 +769,16 @@ async function executeLanzerTaskOverAcp(
 
             try {
             retryLoop: for (let retry = 1; retry <= retryIterations; retry++) {
-                const session = await openConfiguredSession(agent, context, options, permissions, toolHost);
+                const session = await atStage(stage, 'session', () => openConfiguredSession(agent, context, options, permissions, toolHost));
                 lastSessionId = session.sessionId;
                 openedSessions.push(session.sessionId);
 
                 attempts += 1;
                 const initialStartedAt = Date.now();
-                const initialResponse = await agent.request(acp.AGENT_METHODS.session_prompt, {
+                const initialResponse = await atStage(stage, 'turn', () => agent.request(acp.AGENT_METHODS.session_prompt, {
                     sessionId: session.sessionId,
                     prompt: [{ type: 'text', text: task.prompt }]
-                });
+                }));
                 stopReason = initialResponse.stopReason;
                 addTokens(initialResponse.usage);
 
@@ -760,13 +813,13 @@ async function executeLanzerTaskOverAcp(
                 for (let fix = 1; fix <= fixIterations; fix++) {
                     attempts += 1;
                     const fixStartedAt = Date.now();
-                    const fixResponse = await agent.request(acp.AGENT_METHODS.session_prompt, {
+                    const fixResponse = await atStage(stage, 'turn', () => agent.request(acp.AGENT_METHODS.session_prompt, {
                         sessionId: session.sessionId,
                         prompt: [{
                             type: 'text',
                             text: appendPermissionNotice(buildRetryPrompt(validation, fix), client.getDeniedToolCalls())
                         }]
-                    });
+                    }));
                     stopReason = fixResponse.stopReason;
                     addTokens(fixResponse.usage);
 
@@ -823,14 +876,16 @@ async function executeLanzerTaskOverAcp(
                 await closeSessionsQuietly(agent, openedSessions);
             }
         })]);
-    } catch (error) {
+    } catch (thrown) {
+        const error = stage.current ? asStageError(thrown, stage.current) : thrown;
         // The agent's own log is where a failed launch or a rejected session says what happened,
         // and without `--verbose` nobody has seen it. Attach the tail to the one error that will
         // actually be read rather than leaving the reason on a stream that was never shown.
         const tail = agentLog.tail();
         if (!tail) throw error;
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${message}\n\nLast output from the agent:\n${tail}`);
+        const detailed = `${message}\n\nLast output from the agent:\n${tail}`;
+        throw error instanceof LanzerRunStageError ? new LanzerRunStageError(error.stage, detailed) : new Error(detailed);
     } finally {
         processHandle.kill();
         await toolHost?.close();
@@ -1017,6 +1072,7 @@ async function executeLanzerTaskOverCodex(
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
     const client = new RecordingClient(context.allowedRoots, permissions, options.progress);
     const spawnConfig = resolveCodexSpawnConfig(options);
+    const stage: StageTracker = {};
     // Codex over MCP is not an ACP session: there is no permission callback to answer, so the
     // policy can only be expressed through the sandbox Codex is started in — and that sandbox
     // has no setting that separates writing files from running commands. Say so rather than
@@ -1095,9 +1151,9 @@ async function executeLanzerTaskOverCodex(
     };
 
     try {
-        await mcpClient.connect(transport, {
+        await atStage(stage, 'launch', () => mcpClient.connect(transport, {
             timeout: 300_000
-        });
+        }));
 
         // Codex's MCP transport is stateless per call — every prompt starts a fresh
         // conversation. Retry and fix iterations both reduce to "send another prompt";
@@ -1117,7 +1173,7 @@ async function executeLanzerTaskOverCodex(
                 ? task.prompt
                 : buildRetryPrompt(validation, step.fixPass);
             const beforeLength = outputText.length;
-            const result = await mcpClient.callTool(
+            const result = await atStage(stage, 'turn', () => mcpClient.callTool(
                 {
                     name: 'codex',
                     arguments: buildCodexToolArguments(task, promptText, options, permissions)
@@ -1127,7 +1183,7 @@ async function executeLanzerTaskOverCodex(
                     timeout: 300_000,
                     resetTimeoutOnProgress: true
                 }
-            );
+            ));
 
             if (outputText.length === beforeLength) {
                 outputText += extractCodexToolText(result);
@@ -1347,7 +1403,7 @@ function spawnAcpProcess(options: RunLanzerAgentTaskOptions, cwd: string) {
             const hint = error.code === 'ENOENT'
                 ? ` — no such command. Check LANZER_ACP_COMMAND / LANZER_ACP_ARGS.`
                 : '';
-            reject(new Error(`Could not start the ACP agent \`${[options.command, ...(options.args ?? [])].join(' ')}\`: ${error.message}${hint}`));
+            reject(new LanzerRunStageError('launch', `Could not start the ACP agent \`${[options.command, ...(options.args ?? [])].join(' ')}\`: ${error.message}${hint}`));
         });
     });
     // Nothing awaits this unless the run does; without a sink an early rejection would surface as

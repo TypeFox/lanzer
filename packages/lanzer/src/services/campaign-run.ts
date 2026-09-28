@@ -1,7 +1,9 @@
 import {
+    LanzerRunStageError,
     runLanzerCampaignTaskOverAcp,
     type LanzerAgentRunResult
 } from '../acp/run.js';
+import { buildLanzerCampaignTask } from '../campaign/prompt.js';
 import {
     resolvePermissionPolicy,
     type LanzerPermissionPolicy
@@ -127,24 +129,58 @@ export async function runLanzerCampaign(
         return { ok: result.ok, issues };
     };
 
-    const run = await runLanzerCampaignTaskOverAcp(jobs, {
-        command: acp.command,
-        args: acp.args,
-        cwd: acp.cwd,
-        env: acp.env,
-        provider: acp.provider,
-        model: acp.model,
-        effort: acp.effort,
-        maxAttempts: acp.maxAttempts,
-        fixIterations: acp.fixIterations,
-        retryIterations: acp.retryIterations,
-        permissions: acp.permissions,
-        toolkit,
-        policy,
-        dslSkill,
-        validate,
-        progress: acp.progress
-    });
+    const startedAtMs = Date.now();
+    let run: LanzerAgentRunResult;
+    try {
+        run = await runLanzerCampaignTaskOverAcp(jobs, {
+            command: acp.command,
+            args: acp.args,
+            cwd: acp.cwd,
+            env: acp.env,
+            provider: acp.provider,
+            model: acp.model,
+            effort: acp.effort,
+            maxAttempts: acp.maxAttempts,
+            fixIterations: acp.fixIterations,
+            retryIterations: acp.retryIterations,
+            permissions: acp.permissions,
+            toolkit,
+            policy,
+            dslSkill,
+            validate,
+            progress: acp.progress
+        });
+    } catch (error) {
+        // A run that never produced a result is still a run to report: the stage it stopped at is
+        // the useful part, and letting it throw would lose every other campaign in the same file.
+        if (!(error instanceof LanzerRunStageError)) {
+            throw error;
+        }
+        const failed: LanzerAgentRunResult = {
+            task: buildLanzerCampaignTask(jobs, policy, dslSkill),
+            sessionId: '',
+            attempts: 0,
+            stopReason: 'error',
+            outputText: '',
+            agentThoughtText: '',
+            rawUpdates: [],
+            validation: { ok: false, issues: [error.message] },
+            toolCalls: [],
+            deniedToolCalls: [],
+            usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 },
+            durationMs: Date.now() - startedAtMs,
+            attemptLog: [],
+            extraFiles: []
+        };
+        failed.report = await buildLanzerRunReport({
+            campaign: resolved.campaign.name,
+            jobs,
+            run: failed,
+            failure: { stage: error.stage, message: error.message },
+            ok: false
+        });
+        return failed;
+    }
 
     // The campaign runner is not the only judge: `runLanzerCampaignTaskOverAcp` additionally checks
     // that the declared file set is exactly what appeared on disk, and merges that into the run's
