@@ -98,7 +98,7 @@ function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]
  *
  * ACP carries custom tools as MCP, and offers four transports for it. The `acp` one — MCP
  * multiplexed over the connection already open — would need no socket at all, but no agent
- * implements it yet (`claude-agent-acp` 0.75.1 advertises only `http` and `sse`), so this listens
+ * implements it yet (`claude-agent-acp` 0.82.0 still advertises only `http` and `sse`), so this listens
  * on an ephemeral loopback port instead. Still one process: the agent calls back into the same
  * Node instance that spawned it, and every tool body runs on the host's own services.
  *

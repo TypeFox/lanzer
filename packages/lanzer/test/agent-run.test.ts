@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { EmptyFileSystem } from 'langium';
 import { runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
+import { resolvePermissionPolicy } from '../src/acp/permissions.js';
 import { createLanzerServices } from '../src/lanzer-module.js';
 import { previewLanzerCampaignTask, runLanzerCampaign } from '../src/services/campaign-run.js';
 import { DefaultLanzerService } from '../src/services/default-services.js';
@@ -25,6 +26,8 @@ interface LogEntry {
     error?: string;
     content?: string;
     text?: string;
+    mode?: string;
+    meta?: string;
 }
 
 /** One line of the fake agent's log, checked rather than asserted into shape. */
@@ -42,7 +45,9 @@ function toLogEntry(line: string): LogEntry {
         session: typeof value.session === 'number' ? value.session : undefined,
         error: text('error'),
         content: text('content'),
-        text: text('text')
+        text: text('text'),
+        mode: text('mode'),
+        meta: text('meta')
     };
 }
 
@@ -81,10 +86,10 @@ async function runFakeAgent(
     const run = await runLanzerCampaignTaskOverAcp([job], {
         command: process.execPath,
         args: [fixture('fake-agent.mjs')],
-        env: { FAKE_AGENT_SCRIPT: scriptPath, FAKE_AGENT_LOG: logPath },
         maxAttempts: script.length,
         validate: async () => ({ ok: true, issues: [] }),
-        ...options
+        ...options,
+        env: { FAKE_AGENT_SCRIPT: scriptPath, FAKE_AGENT_LOG: logPath, ...options.env }
     });
     const log = (await readFile(logPath, 'utf8')).split('\n').filter(Boolean).map(toLogEntry);
     return { log, run };
@@ -127,6 +132,50 @@ describe('file access during a run', () => {
         expect(log.map((entry) => [entry.op, entry.ok])).toEqual([['write', true], ['read', true], ['write', false]]);
         expect(log[1].content).toBe('grammar');
         expect(await readFile(join(outside, 'reference.txt'), 'utf8')).toBe('grammar');
+    });
+});
+
+describe('the session permission mode', () => {
+    const CLAUDE_MODES = JSON.stringify(['default', 'acceptEdits', 'plan', 'auto']);
+
+    async function sessionSetup(options: Partial<RunLanzerAgentTaskOptions>) {
+        const { log } = await runFakeAgent([[]], options);
+        const session = log.find((entry) => entry.op === 'session');
+        return {
+            meta: session?.meta ? JSON.parse(session.meta) : undefined,
+            modes: log.filter((entry) => entry.op === 'mode').map((entry) => entry.mode)
+        };
+    }
+
+    test('a run that may write switches to acceptEdits, and never allows bypass', async () => {
+        const { meta, modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
+        expect(modes).toEqual(['acceptEdits']);
+        // The adapter ignores a mode sent in `_meta`, so none is; bypass is refused there instead.
+        expect(meta.claudeCode.options).toMatchObject({ allowDangerouslySkipPermissions: false });
+        expect(meta.claudeCode.options).not.toHaveProperty('permissionMode');
+    });
+
+    test('a read-only run stays in default, which asks', async () => {
+        const { modes } = await sessionSetup({
+            env: { FAKE_AGENT_MODES: JSON.stringify(['auto', 'default', 'acceptEdits']) },
+            permissions: resolvePermissionPolicy('read')
+        });
+        expect(modes).toEqual(['default']);
+    });
+
+    test('nothing is sent when the session already opens in that mode', async () => {
+        const { modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: JSON.stringify(['acceptEdits', 'default']) } });
+        expect(modes).toEqual([]);
+    });
+
+    test('an agent that does not offer the mode is left alone', async () => {
+        const { modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: JSON.stringify(['ask', 'code']) } });
+        expect(modes).toEqual([]);
+    });
+
+    test('an explicit session mode wins over the policy', async () => {
+        const { modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES }, sessionModeId: 'plan' });
+        expect(modes).toEqual(['plan']);
     });
 });
 

@@ -49,6 +49,8 @@ describe('permission policy', () => {
     test('interactive-only tools are recognised by name', () => {
         expect(isInteractiveOnlyTool('Monitor')).toBe(true);
         expect(isInteractiveOnlyTool('Task')).toBe(true);
+        expect(isInteractiveOnlyTool('Agent')).toBe(true);
+        expect(isInteractiveOnlyTool('EnterWorktree')).toBe(true);
         expect(isInteractiveOnlyTool('Read')).toBe(false);
         expect(isInteractiveOnlyTool(undefined)).toBe(false);
     });
