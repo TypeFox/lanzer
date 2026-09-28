@@ -83,7 +83,8 @@ function determineFailedStage(
     if (run.stopReason !== 'end_turn' && run.stopReason !== 'unknown') {
         return 'turn';
     }
-    if (files.some((file) => !file.exists)) {
+    // A target that predates the run and was never rewritten is as unwritten as a missing one.
+    if (files.some((file) => !file.exists) || run.staleFiles.length > 0) {
         return 'no_output';
     }
     const issues = (validation?.documents ?? []).flatMap((document) => document.issues);

@@ -13,6 +13,7 @@ import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
 import type { LanzerCampaignValidationResult } from './types.js';
 import { readFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { buildLanzerGenerationJobs } from '../campaign/jobs.js';
 import type { LanzerResolvedCampaign } from '../campaign/model.js';
 import type { LanzerCampaignRunner, LanzerService } from './types.js';
@@ -129,6 +130,12 @@ export async function runLanzerCampaign(
         return { ok: result.ok, issues };
     };
 
+    // The agent is told to read these; it may, but nothing it is sent to read is its to change.
+    const readOnlyDirectories = [
+        ...(policy?.grammarReferencePath ? [dirname(policy.grammarReferencePath)] : []),
+        ...(policy?.referenceFiles ?? []).map((file) => dirname(file.path))
+    ];
+
     const startedAtMs = Date.now();
     let run: LanzerAgentRunResult;
     try {
@@ -144,6 +151,7 @@ export async function runLanzerCampaign(
             fixIterations: acp.fixIterations,
             retryIterations: acp.retryIterations,
             permissions: acp.permissions,
+            readOnlyDirectories,
             toolkit,
             policy,
             dslSkill,
@@ -170,7 +178,8 @@ export async function runLanzerCampaign(
             usage: { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 },
             durationMs: Date.now() - startedAtMs,
             attemptLog: [],
-            extraFiles: []
+            extraFiles: [],
+            staleFiles: []
         };
         failed.report = await buildLanzerRunReport({
             campaign: resolved.campaign.name,
