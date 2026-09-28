@@ -10,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult, ContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import type { LanzerGenerationJob } from '../campaign/jobs.js';
 import { isRecord } from '../util/guards.js';
+import { appendGroupedLanzerIssues } from './issues.js';
 import type { LanzerRunReport } from '../report/model.js';
 import { startLanzerToolHost, type LanzerToolCallRecord, type LanzerToolHost, type LanzerToolkit } from './tool-host.js';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
@@ -1608,7 +1609,7 @@ function buildRetryPromptForJob(
         lines.push('No validation details were captured. Produce a corrected file and stop after writing it.');
         return lines.join('\n');
     }
-    appendGroupedIssues(lines, validation.issues, 16);
+    appendGroupedLanzerIssues(lines, validation.issues, 16);
     lines.push('When multiple sites report the same message, treat them as one root cause — apply a single consistent fix everywhere rather than patching each site individually.');
     lines.push('After editing, respond briefly with a status message.');
     return lines.join('\n');
@@ -1630,89 +1631,10 @@ function buildRetryPromptForCampaign(
         lines.push('No validation details were captured. Produce a corrected file set and stop after writing it.');
         return lines.join('\n');
     }
-    appendGroupedIssues(lines, validation.issues, 24);
+    appendGroupedLanzerIssues(lines, validation.issues, 24);
     lines.push('When multiple sites report the same message, treat them as one root cause — apply a single consistent fix everywhere rather than patching each site individually.');
     lines.push('After editing, respond briefly with a status message.');
     return lines.join('\n');
-}
-
-/**
- * Format the validator's issue list for a fix prompt: group identical messages and
- * show the call sites under each group. A 30-item diagnostic list with one root
- * cause becomes a single block + 30 locations, which is much easier for the agent
- * to act on than a flat enumeration of the same message repeated.
- *
- * `maxSitesPerGroup` truncates the per-group location lists when a single root
- * cause has produced an unreasonable number of call sites.
- */
-function appendGroupedIssues(lines: string[], issues: string[], maxSitesPerGroup: number): void {
-    const groups = new Map<string, string[]>();
-    const order: string[] = [];
-    for (const issue of issues) {
-        const split = splitIssueIntoSiteAndMessage(issue);
-        const key = split.message;
-        if (!groups.has(key)) {
-            groups.set(key, []);
-            order.push(key);
-        }
-        groups.get(key)!.push(split.site);
-    }
-
-    const distinctMessages = order.length;
-    if (distinctMessages === 1 && (groups.get(order[0])?.length ?? 0) > 1) {
-        const message = order[0];
-        const sites = groups.get(message)!;
-        lines.push(`All ${sites.length} reported issues share one root cause:`);
-        lines.push(`  ${message}`);
-        lines.push('Sites:');
-        for (const site of sites.slice(0, maxSitesPerGroup)) {
-            lines.push(`  - ${site}`);
-        }
-        if (sites.length > maxSitesPerGroup) {
-            lines.push(`  - ... ${sites.length - maxSitesPerGroup} more site(s) omitted`);
-        }
-        return;
-    }
-
-    lines.push(`Fix the following ${issues.length} issue(s), grouped by message:`);
-    for (const message of order) {
-        const sites = groups.get(message)!;
-        if (sites.length === 1) {
-            lines.push(`- ${sites[0]}: ${message}`);
-        } else {
-            lines.push(`- (${sites.length}×) ${message}`);
-            for (const site of sites.slice(0, maxSitesPerGroup)) {
-                lines.push(`    at ${site}`);
-            }
-            if (sites.length > maxSitesPerGroup) {
-                lines.push(`    ... ${sites.length - maxSitesPerGroup} more site(s) omitted`);
-            }
-        }
-    }
-}
-
-/**
- * Heuristic split of "file:line:col [kind] @ x:y message" style strings into a
- * locator and a normalised message. The validator helpers produce a few different
- * shapes — keep this tolerant rather than tightly coupled to any single one.
- */
-function splitIssueIntoSiteAndMessage(issue: string): { site: string; message: string } {
-    // Pattern 1: `file://...: [kind] @ line:col message`
-    const kindMatch = issue.match(/^(.*?):\s*\[[^\]]+\](?:\s*@\s*(\d+:\d+))?\s*(.*)$/);
-    if (kindMatch) {
-        const path = kindMatch[1];
-        const loc = kindMatch[2];
-        const message = kindMatch[3].trim();
-        const site = loc ? `${path}:${loc}` : path;
-        return { site, message };
-    }
-    // Pattern 2: `file:line:col message`
-    const colonMatch = issue.match(/^(\S+:\d+:\d+)\s+(.*)$/);
-    if (colonMatch) {
-        return { site: colonMatch[1], message: colonMatch[2].trim() };
-    }
-    // Fallback: treat the entire string as the message.
-    return { site: '(no site)', message: issue.trim() };
 }
 
 /**

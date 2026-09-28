@@ -1,3 +1,4 @@
+export * from './acp/issues.js';
 export * from './acp/permissions.js';
 export * from './acp/tool-host.js';
 export * from './report/model.js';
