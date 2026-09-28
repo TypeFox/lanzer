@@ -37,6 +37,7 @@ function run(job: LanzerGenerationJob, overrides: Partial<LanzerAgentRunResult> 
         durationMs: 0,
         attemptLog: [],
         extraFiles: [],
+        staleFiles: [],
         ...overrides
     };
 }
@@ -78,6 +79,10 @@ describe('failed stage', () => {
 
     test('a missing file is no_output', async () => {
         expect(await stageOf(missingJob, verdict())).toBe('no_output');
+    });
+
+    test('a target left unchanged from before the run is no_output too', async () => {
+        expect(await stageOf(writtenJob, verdict(), { staleFiles: [writtenJob.absoluteOutputPath] })).toBe('no_output');
     });
 
     test('a parse error is syntax, even when a diagnostic is also present', async () => {

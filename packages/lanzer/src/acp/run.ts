@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
 import chalk from 'chalk';
@@ -140,7 +141,14 @@ export interface RunLanzerAgentTaskOptions {
     args?: string[];
     cwd?: string;
     env?: Record<string, string>;
+    /** Directories the agent may read and write in, beyond the workspace. */
     additionalDirectories?: string[];
+    /**
+     * Directories the agent may read but not write: the grammar reference, reference files, the
+     * DSL skill. Lanzer points the agent at these, so it has to be able to open them — and nothing
+     * it is sent to read is something it should change.
+     */
+    readOnlyDirectories?: string[];
     provider?: string;
     model?: string;
     effort?: string;
@@ -281,6 +289,13 @@ export interface LanzerAgentRunResult {
     /** Files produced beyond the campaign's declared set. Not a failure unless `strictFileSet`. */
     extraFiles: string[];
     /**
+     * Declared targets that already existed when the run started and were never rewritten.
+     *
+     * Their content predates the run, so a passing validation of them says nothing about what the
+     * agent did. The run fails on them, as it would on a target that was never written.
+     */
+    staleFiles: string[];
+    /**
      * Structured outcome of the run, attached by {@link runLanzerCampaign}.
      *
      * Absent when the lower-level entry points are called directly, because the report needs the
@@ -315,7 +330,8 @@ class RecordingClient {
     private readonly updates: LanzerAgentRunUpdate[] = [];
     private readonly outputChunks: string[] = [];
     private readonly thoughtChunks: string[] = [];
-    private readonly allowedRoots: string[];
+    private readonly writableRoots: string[];
+    private readonly readableRoots: string[];
     private readonly writtenPaths = new Set<string>();
     private readonly progress?: RecordingClientProgress;
     private readonly toolTitles = new Map<string, string>();
@@ -333,11 +349,12 @@ class RecordingClient {
     private thoughtLineBuf = '';
 
     constructor(
-        allowedRoots: string[],
+        roots: FileAccessRoots,
         permissions: LanzerPermissionPolicy,
         progress?: RecordingClientProgress
     ) {
-        this.allowedRoots = allowedRoots.map((root) => resolve(root));
+        this.writableRoots = roots.writable.map(canonicalPath);
+        this.readableRoots = [...this.writableRoots, ...roots.readOnly.map(canonicalPath)];
         this.permissions = permissions;
         this.progress = progress;
     }
@@ -564,7 +581,7 @@ class RecordingClient {
     }
 
     async readTextFile(params: acp.ReadTextFileRequest): Promise<{ content: string }> {
-        const filePath = this.assertAllowedPath(params.path);
+        const filePath = this.assertAllowedPath(params.path, this.readableRoots, 'read');
         const content = await readFile(filePath, 'utf8');
         if (!params.line && !params.limit) {
             return { content };
@@ -576,7 +593,7 @@ class RecordingClient {
     }
 
     async writeTextFile(params: acp.WriteTextFileRequest): Promise<Record<string, never>> {
-        const filePath = this.assertAllowedPath(params.path);
+        const filePath = this.assertAllowedPath(params.path, this.writableRoots, 'write');
         await mkdir(dirname(filePath), { recursive: true });
         await writeFile(filePath, params.content, 'utf8');
         this.writtenPaths.add(filePath);
@@ -595,26 +612,65 @@ class RecordingClient {
         return Array.from(this.writtenPaths);
     }
 
-    private assertAllowedPath(filePath: string): string {
+    /**
+     * Resolve a path the agent asked for, refusing it unless it lies inside one of `roots`.
+     *
+     * Compared after resolving symlinks, so a link inside the workspace that points out of it is
+     * judged by where it leads, not by where it sits.
+     */
+    private assertAllowedPath(filePath: string, roots: string[], access: 'read' | 'write'): string {
         const resolvedPath = resolve(filePath);
-        const permitted = this.allowedRoots.some((root) => {
-            const rel = relative(root, resolvedPath);
-            return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-        });
-        if (!permitted) {
-            throw new Error(`ACP file access denied for path outside allowed roots: ${resolvedPath}`);
+        const canonical = canonicalPath(resolvedPath);
+        if (!roots.some((root) => isWithin(root, canonical))) {
+            // A request error rather than a plain one: the SDK sends a plain error to the agent as
+            // "Internal error", which tells it nothing about trying another path.
+            throw acp.RequestError.invalidParams(
+                { path: resolvedPath },
+                `ACP file ${access} denied for path outside the allowed directories: ${resolvedPath}`
+            );
         }
         return resolvedPath;
+    }
+}
+
+/** Where the agent may read, and the narrower set where it may also write. */
+interface FileAccessRoots {
+    writable: string[];
+    readOnly: string[];
+}
+
+/** Whether `path` is `root` or lies beneath it. Both are expected to be canonical. */
+function isWithin(root: string, path: string): boolean {
+    const rel = relative(root, path);
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+/**
+ * The path with every symlink resolved, for a path that may not exist yet.
+ *
+ * A file the agent is about to create has no real path of its own, so the nearest existing
+ * ancestor is resolved and the rest appended — which still catches a symlinked directory on the way.
+ */
+function canonicalPath(path: string): string {
+    const absolute = resolve(path);
+    try {
+        return realpathSync.native(absolute);
+    } catch {
+        const parent = dirname(absolute);
+        return parent === absolute ? absolute : join(canonicalPath(parent), basename(absolute));
     }
 }
 
 /** A file-set verdict, plus the files that were merely extra rather than wrong. */
 interface LanzerFileSetResult extends LanzerAgentValidationResult {
     extraFiles: string[];
+    staleFiles: string[];
 }
 
 interface WorkspaceSnapshot {
     files: Set<string>;
+    /** Modification time of each declared target that already existed when the run started. */
+    targetTimes: Map<string, number>;
 }
 
 /**
@@ -642,12 +698,14 @@ export async function runLanzerAgentTaskOverAcp(
         task,
         {
             sessionCwd: job.workspaceRoot ?? options.cwd ?? process.cwd(),
-            allowedRoots: [
-                options.cwd ?? process.cwd(),
-                job.workspaceRoot ?? options.cwd ?? process.cwd(),
-                dirname(job.absoluteOutputPath),
-                ...(options.additionalDirectories ?? [])
-            ]
+            roots: {
+                writable: [
+                    job.workspaceRoot ?? options.cwd ?? process.cwd(),
+                    dirname(job.absoluteOutputPath),
+                    ...(options.additionalDirectories ?? [])
+                ],
+                readOnly: options.readOnlyDirectories ?? []
+            }
         },
         options,
         (validation, attempt) => buildRetryPromptForJob(job, validation, attempt)
@@ -662,16 +720,15 @@ export async function runLanzerCampaignTaskOverAcp(
     const sessionCwd = jobs[0]?.workspaceRoot ?? options.cwd ?? process.cwd();
     const expectedOutputPaths = jobs.map((job) => resolve(job.absoluteOutputPath));
     const supportPaths = jobs[0]?.supportFiles.map((file) => resolve(file.absolutePath)) ?? [];
-    const baselineSnapshot = await captureWorkspaceSnapshot(sessionCwd);
+    const baselineSnapshot = await captureWorkspaceSnapshot(sessionCwd, expectedOutputPaths);
     return executeLanzerTaskOverAcp(
         task,
         {
             sessionCwd,
-            allowedRoots: [
-                options.cwd ?? process.cwd(),
-                sessionCwd,
-                ...(options.additionalDirectories ?? [])
-            ]
+            roots: {
+                writable: [sessionCwd, ...(options.additionalDirectories ?? [])],
+                readOnly: options.readOnlyDirectories ?? []
+            }
         },
         options,
         (validation, attempt) => buildRetryPromptForCampaign(jobs, validation, attempt),
@@ -689,11 +746,11 @@ async function executeLanzerTaskOverAcp(
     task: LanzerTaskPayload,
     context: {
         sessionCwd: string;
-        allowedRoots: string[];
+        roots: FileAccessRoots;
     },
     options: RunLanzerAgentTaskOptions,
     buildRetryPrompt: (validation: LanzerAgentValidationResult | undefined, attempt: number) => string,
-    extraValidate?: (client: RecordingClient) => Promise<LanzerAgentValidationResult>
+    extraValidate?: (client: RecordingClient) => Promise<LanzerFileSetResult>
 ): Promise<LanzerAgentRunResult> {
     if (shouldUseCodexMcpTransport(options)) {
         return executeLanzerTaskOverCodex(task, context, options, buildRetryPrompt, extraValidate);
@@ -715,7 +772,7 @@ async function executeLanzerTaskOverAcp(
         Readable.toWeb(processHandle.stdout)
     );
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
-    const client = new RecordingClient(context.allowedRoots, permissions, options.progress);
+    const client = new RecordingClient(context.roots, permissions, options.progress);
     const { fixIterations, retryIterations } = resolveAttemptBudget(options);
     emitRunProgress(options.progress, chalk.dim('[perm]'), 'allowing', describePermissionPolicy(permissions));
 
@@ -753,6 +810,7 @@ async function executeLanzerTaskOverAcp(
             const openedSessions: string[] = [];
             const attemptLog: LanzerAttemptRecord[] = [];
             let lastExtraFiles: string[] = [];
+            let lastStaleFiles: string[] = [];
             const tokens = { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 };
             /** Token counts are per-turn and additive, unlike the cumulative `usage_update` figures. */
             const addTokens = (usage: acp.Usage | null | undefined): void => {
@@ -793,7 +851,8 @@ async function executeLanzerTaskOverAcp(
                 validation = await options.validate();
                 if (extraValidate) {
                     const fileSet = await extraValidate(client);
-                    lastExtraFiles = extraFilesOf(fileSet);
+                    lastExtraFiles = fileSet.extraFiles;
+                    lastStaleFiles = fileSet.staleFiles;
                     validation = mergeValidationResults(validation, fileSet);
                 }
                 attemptLog.push({
@@ -826,7 +885,8 @@ async function executeLanzerTaskOverAcp(
                     validation = await options.validate();
                     if (extraValidate) {
                         const fileSet = await extraValidate(client);
-                        lastExtraFiles = extraFilesOf(fileSet);
+                        lastExtraFiles = fileSet.extraFiles;
+                        lastStaleFiles = fileSet.staleFiles;
                         validation = mergeValidationResults(validation, fileSet);
                     }
                     attemptLog.push({
@@ -867,6 +927,7 @@ async function executeLanzerTaskOverAcp(
                 validation,
                 attemptLog,
                 extraFiles: [...lastExtraFiles],
+                staleFiles: [...lastStaleFiles],
                 toolCalls: [...(toolHost?.calls() ?? [])],
                 deniedToolCalls: client.getDeniedToolCalls(),
                 usage: mergeUsage(tokens, client.getReportedUsage()),
@@ -907,7 +968,7 @@ async function executeLanzerTaskOverAcp(
  */
 function withFileSetCheck(
     toolkit: LanzerToolkit,
-    extraValidate: ((client: RecordingClient) => Promise<LanzerAgentValidationResult>) | undefined,
+    extraValidate: ((client: RecordingClient) => Promise<LanzerFileSetResult>) | undefined,
     client: RecordingClient
 ): LanzerToolkit {
     const validate = toolkit.validate;
@@ -983,7 +1044,7 @@ function buildClientApp(client: RecordingClient): acp.ClientApp {
  */
 async function openConfiguredSession(
     agent: acp.ClientContext,
-    context: { sessionCwd: string; allowedRoots: string[] },
+    context: { sessionCwd: string; roots: FileAccessRoots },
     options: RunLanzerAgentTaskOptions,
     permissions: LanzerPermissionPolicy,
     toolHost: LanzerToolHost | undefined
@@ -991,7 +1052,9 @@ async function openConfiguredSession(
     const tools = allowedClaudeTools(permissions);
     const session = await agent.request(acp.AGENT_METHODS.session_new, {
         cwd: context.sessionCwd,
-        additionalDirectories: options.additionalDirectories,
+        // The agent's own sandbox has to admit what Lanzer points it at; writes to the read-only ones
+        // are still refused by `RecordingClient`, which every file operation goes through.
+        additionalDirectories: [...(options.additionalDirectories ?? []), ...(options.readOnlyDirectories ?? [])],
         mcpServers: toolHost ? [toolHost.descriptor] : [],
         // Claude Code reads its per-session options from here. Every other agent ignores the
         // key, which is why this is a hint and not the enforcement — that stays in
@@ -1059,18 +1122,18 @@ async function executeLanzerTaskOverCodex(
     task: LanzerTaskPayload,
     context: {
         sessionCwd: string;
-        allowedRoots: string[];
+        roots: FileAccessRoots;
     },
     options: RunLanzerAgentTaskOptions,
     buildRetryPrompt: (validation: LanzerAgentValidationResult | undefined, attempt: number) => string,
-    extraValidate?: (_client: RecordingClient) => Promise<LanzerAgentValidationResult>
+    extraValidate?: (_client: RecordingClient) => Promise<LanzerFileSetResult>
 ): Promise<LanzerAgentRunResult> {
     const startedAtMs = Date.now();
     const { fixIterations, retryIterations } = resolveAttemptBudget(options);
     const rawUpdates: LanzerAgentRunUpdate[] = [];
     const sessionId = randomUUID();
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
-    const client = new RecordingClient(context.allowedRoots, permissions, options.progress);
+    const client = new RecordingClient(context.roots, permissions, options.progress);
     const spawnConfig = resolveCodexSpawnConfig(options);
     const stage: StageTracker = {};
     // Codex over MCP is not an ACP session: there is no permission callback to answer, so the
@@ -1214,6 +1277,7 @@ async function executeLanzerTaskOverCodex(
             validation,
             attemptLog: [],
             extraFiles: [],
+            staleFiles: [],
             toolCalls: [],
             deniedToolCalls: client.getDeniedToolCalls(),
             usage: mergeUsage(
@@ -1284,11 +1348,6 @@ function mergeUsage(
         ...(reported.context ? { contextUsed: reported.context.used, contextSize: reported.context.size } : {}),
         ...(reported.cost ? { costAmount: reported.cost.amount, costCurrency: reported.cost.currency } : {})
     };
-}
-
-/** The extra-file list, when the validation came from the file-set check that produces one. */
-function extraFilesOf(result: LanzerAgentValidationResult): string[] {
-    return 'extraFiles' in result && Array.isArray(result.extraFiles) ? result.extraFiles : [];
 }
 
 function mergeValidationResults(
@@ -1721,9 +1780,14 @@ async function validateCampaignFileSet(
     const support = new Set(supportPaths.map((filePath) => resolve(filePath)));
     const currentFiles = await listFilesRecursive(workspaceRoot);
 
+    const staleFiles: string[] = [];
     for (const filePath of expected) {
-        if (!(await exists(filePath))) {
+        const modified = await modificationTime(filePath);
+        if (modified === undefined) {
             issues.push(`Missing required generated file: ${filePath}`);
+        } else if (baseline.targetTimes.get(filePath) === modified) {
+            staleFiles.push(filePath);
+            issues.push(`Required generated file was not written during this run (unchanged since before it started): ${filePath}`);
         }
     }
 
@@ -1740,15 +1804,34 @@ async function validateCampaignFileSet(
     return {
         ok: issues.length === 0,
         issues,
-        extraFiles
+        extraFiles,
+        staleFiles
     };
 }
 
 async function captureWorkspaceSnapshot(
-    workspaceRoot: string
+    workspaceRoot: string,
+    targets: string[]
 ): Promise<WorkspaceSnapshot> {
     const files = await listFilesRecursive(workspaceRoot);
-    return { files };
+    const targetTimes = new Map<string, number>();
+    for (const target of targets) {
+        const modified = await modificationTime(target);
+        if (modified !== undefined) {
+            targetTimes.set(resolve(target), modified);
+        }
+    }
+    return { files, targetTimes };
+}
+
+/** A file's modification time, or `undefined` when there is no such file. */
+async function modificationTime(filePath: string): Promise<number | undefined> {
+    try {
+        const stats = await stat(filePath);
+        return stats.isFile() ? stats.mtimeMs : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 async function listFilesRecursive(root: string): Promise<Set<string>> {
@@ -1771,14 +1854,4 @@ async function listFilesRecursive(root: string): Promise<Set<string>> {
     };
     await walk(resolve(root));
     return files;
-}
-
-
-async function exists(filePath: string): Promise<boolean> {
-    try {
-        await access(filePath);
-        return true;
-    } catch {
-        return false;
-    }
 }

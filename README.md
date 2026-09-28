@@ -133,10 +133,15 @@ A generation run is unattended, so the agent gets what writing files needs and n
 shell commands, deleting or moving files, and reaching the network are all refused unless you ask
 for them.
 
-That default is worth one sentence of explanation. Lanzer confines the agent's reads and writes to
-the campaign's own directories, but that check only covers file access routed through the client —
-an agent that shells out steps around it entirely. Withholding `execute` is what keeps those
-directories a boundary rather than a suggestion.
+That default is worth one sentence of explanation. Lanzer confines the agent's writes to the
+campaign's workspace, and its reads to the workspace plus what Lanzer points it at (the grammar
+reference, the policy's reference files, the DSL skill) — judged after resolving symlinks — but that
+check only covers file access routed through the client — an agent that shells out steps around it
+entirely. Withholding `execute` is what keeps those directories a boundary rather than a suggestion.
+
+A declared target that already exists when the run starts has to be rewritten by the agent: one left
+untouched fails the run as `no_output`, since passing validation says nothing about a file the agent
+never produced.
 
 Widen or narrow it with `LANZER_ACP_ALLOW`, or per-run:
 
