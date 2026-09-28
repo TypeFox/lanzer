@@ -33,7 +33,8 @@
     "scripts": {
         "clean": "shx rm -fr out *.tsbuildinfo",
         "build": "tsc -b tsconfig.json",
-        "build:clean": "npm run clean && npm run build"
+        "build:clean": "npm run clean && npm run build",
+        "test": "tsc -p test/tsconfig.json && vitest run"
     },
     "dependencies": {
         "commander": "~11.1.0",
@@ -42,7 +43,8 @@
         "lanzer": "0.0.1"
     },
     "devDependencies": {
-        "@types/node": "~20.17.48"
+        "@types/node": "~20.17.48",
+        "vitest": "~4.1.9"
     },
     "volta": {
         "node": "20.19.2",

@@ -12,7 +12,7 @@
         "build:clean": "npm run clean && npm run build",
         "langium:generate": "npm run --workspace packages/lanzer langium:generate",
         "langium:watch": "npm run --workspace packages/lanzer langium:watch",
-        "test": "npm run --workspace packages/lanzer test"
+        "test": "npm run build && npm run test --workspaces --if-present"
     },
     "devDependencies": {
         "@types/node": "~20.17.48",

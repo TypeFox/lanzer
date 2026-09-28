@@ -42,7 +42,8 @@
         "langium:generate": "langium generate",
         "langium:watch": "langium generate --watch",
         "build": "echo 'No build step'",
-        "build:clean": "npm run clean && npm run build"
+        "build:clean": "npm run clean && npm run build",
+        "test": "langium generate && tsc -p test/tsconfig.json && vitest run"
     },
     "dependencies": {
         "@agentclientprotocol/claude-agent-acp": "^0.75.1",
@@ -54,7 +55,8 @@
     },
     "devDependencies": {
         "@types/node": "~20.17.48",
-        "langium-cli": "~4.4.0"
+        "langium-cli": "~4.4.0",
+        "vitest": "~4.1.9"
     },
     "volta": {
         "node": "20.19.2",
