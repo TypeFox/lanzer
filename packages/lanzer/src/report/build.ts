@@ -146,7 +146,8 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         issues: tallyIssues(validation),
         documents: (validation?.documents ?? []).map((document) => ({
             uri: document.uri,
-            issues: document.issues
+            issues: document.issues,
+            ...(document.expectsDiagnostics ? { expectsDiagnostics: true } : {})
         })),
         nearMisses: validation?.diagnostics?.files ?? [],
         campaignIssues: validation?.campaign?.issues ?? [],
