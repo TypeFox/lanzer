@@ -6,6 +6,7 @@ import {
     resolvePermissionPolicy,
     type LanzerPermissionPolicy
 } from '../acp/permissions.js';
+import { formatLanzerIssue } from '../acp/issues.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
 import type { LanzerCampaignValidationResult } from './types.js';
@@ -117,8 +118,7 @@ export async function runLanzerCampaign(
         const issues: string[] = [];
         for (const doc of result.documents) {
             for (const issue of doc.issues) {
-                const location = issue.line !== undefined ? `:${issue.line}` : '';
-                issues.push(`[${issue.kind}] ${issue.message} (${doc.uri}${location})`);
+                issues.push(formatLanzerIssue({ uri: doc.uri, ...issue }));
             }
         }
         for (const issue of result.campaign?.issues ?? []) issues.push(issue);
