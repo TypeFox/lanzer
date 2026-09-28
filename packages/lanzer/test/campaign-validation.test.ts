@@ -13,8 +13,24 @@ describe('campaign authoring validation', () => {
             'require Fn[name="main"]',
             'min 2 Fn',
             'forbid Cls >> Call[callee->Fn[name="main"]]',
-            'require Fn:has(> Param)'
+            'require Fn:has(> Param)',
+            'require Fn > Ret',
+            'require Fn:has(> Ret)',
+            'require Module >> Ret'
         ].join('\n'))).toEqual([]);
+    });
+
+    test('a node is not its own child through a union', async () => {
+        expect(await issuesFor('require Stmt > Ret')).toContain(
+            "'Ret' is not reachable as a direct child of 'Stmt' in the imported grammar."
+        );
+    });
+
+    test('inside :has and :not, a part with no combinator is checked as a descendant', async () => {
+        expect(await issuesFor('require Param:has(Fn)')).toEqual([
+            "'Fn' is not reachable as a descendant of 'Param' in the imported grammar."
+        ]);
+        expect(await issuesFor('require Cls:not(Ret)')).toEqual([]);
     });
 
     test('an unknown type does not resolve', async () => {

@@ -22,13 +22,15 @@ describe('containment graph', () => {
         expect([...graph.directChildren.get('Cls') ?? []]).toContain('Fn');
     });
 
-    test('propagates through unassigned rule calls', () => {
-        expect([...graph.directChildren.get('Stmt') ?? []]).toEqual(expect.arrayContaining(['Call', 'Ret']));
+    test('an unassigned rule call is subtyping, not containment', () => {
+        // `Stmt: Call | Ret` makes a Stmt that *is* a Call or a Ret; it contains neither.
+        expect(graph.directChildren.get('Stmt') ?? new Set()).not.toContain('Call');
+        expect(graph.directChildren.get('Stmt') ?? new Set()).not.toContain('Ret');
     });
 
-    test('descendants are the transitive closure', () => {
-        expect([...graph.descendants.get('Module') ?? []]).toEqual(expect.arrayContaining(['Fn', 'Cls', 'Param', 'Call', 'Ret']));
-        expect([...graph.descendants.get('Cls') ?? []]).toContain('Ret');
+    test('descendants are the transitive closure, by declared slot type', () => {
+        expect([...graph.descendants.get('Module') ?? []]).toEqual(expect.arrayContaining(['Fn', 'Cls', 'Param', 'Stmt']));
+        expect([...graph.descendants.get('Cls') ?? []]).toContain('Stmt');
     });
 
     test('a cross-reference is not containment', () => {

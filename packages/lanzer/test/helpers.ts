@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { URI, type AstNode, type AstReflection, type GrammarAST } from 'langium';
+import { resolve } from 'node:path';
+import { URI, type AstNode, type AstReflection, type GrammarAST, type LangiumDocument } from 'langium';
 import { createServicesForGrammar } from 'langium/grammar';
 import { parseHelper } from 'langium/test';
 import { loadLanzerDocumentFromString, type LanzerDocumentLoadResult } from '../src/campaign/load.js';
@@ -10,6 +11,13 @@ import type { LanzerCampaignSpec } from '../src/campaign/model.js';
 /** Absolute path of a file under `test/fixtures`. */
 export function fixture(name: string): string {
     return fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+}
+
+function createMiniServices() {
+    return createServicesForGrammar({
+        grammar: readFileSync(fixture('mini.langium'), 'utf8'),
+        languageMetaData: { languageId: 'mini', fileExtensions: ['.mini'], caseInsensitive: false, mode: 'development' }
+    });
 }
 
 /**
@@ -24,7 +32,7 @@ export async function parseMini(text: string): Promise<{
     grammar: GrammarAST.Grammar;
     parserErrors: number;
 }> {
-    const services = await createServicesForGrammar({ grammar: readFileSync(fixture('mini.langium'), 'utf8') });
+    const services = await createMiniServices();
     const document = await parseHelper(services)(text);
     return {
         root: document.parseResult.value,
@@ -62,4 +70,19 @@ export async function loadCampaignSpecs(source: string): Promise<LanzerCampaignS
         throw new Error(`Campaign did not load cleanly: ${loaded.issues.map((issue) => issue.message).join('; ')}`);
     }
     return mapLanzerCampaignFile(loaded.model, { sourceUri: loaded.document.uri.toString() });
+}
+
+/**
+ * Parse a Mini program as the generated file at `path` of a campaign, so requirement checks find it
+ * by alias the way they find a file the agent wrote.
+ */
+export async function parseMiniDocument(
+    text: string,
+    path: string,
+    campaign: LanzerCampaignSpec
+): Promise<{ document: LangiumDocument; reflection: AstReflection }> {
+    const services = await createMiniServices();
+    const base = resolve(campaign.baseDir ?? '', campaign.workspaceRoot ?? '');
+    const document = await parseHelper(services)(text, { documentUri: URI.file(resolve(base, path)).toString() });
+    return { document, reflection: services.shared.AstReflection };
 }

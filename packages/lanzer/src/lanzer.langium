@@ -22,7 +22,7 @@ Campaign:
 FileSpec:
     'file' name=ID
     'at' path=STRING
-    'generates' rootRule=ID
+    'generates' rootRule=[AbstractRule:ID]
     '{'
         ('description' description=STRING)?
         requirements+=FileRequirement*
