@@ -216,3 +216,63 @@ describe('Lanzer tools across sessions', () => {
         expect(run.toolCalls).toHaveLength(2);
     });
 });
+
+describe('the Codex MCP transport', () => {
+    /** Run the fake Codex server, one script entry per call; return the prompts it received. */
+    async function runFakeCodex(
+        script: { path: string; content?: string }[][],
+        validate: RunLanzerAgentTaskOptions['validate'],
+        options: Partial<RunLanzerAgentTaskOptions> = {}
+    ) {
+        const scriptPath = join(dir, 'codex-script.json');
+        const logPath = join(dir, 'codex.log');
+        await writeFile(scriptPath, JSON.stringify(script), 'utf8');
+        await writeFile(logPath, '', 'utf8');
+        const run = await runLanzerCampaignTaskOverAcp([job], {
+            provider: 'codex',
+            command: process.execPath,
+            args: [fixture('fake-codex.mjs')],
+            env: { FAKE_CODEX_SCRIPT: scriptPath, FAKE_CODEX_LOG: logPath },
+            validate,
+            toolkit: { validate: async () => ({ ok: true, documents: [] }) },
+            ...options
+        });
+        const prompts = (await readFile(logPath, 'utf8')).split('\n').filter(Boolean).map((line) => {
+            const entry: unknown = JSON.parse(line);
+            return isRecord(entry) && typeof entry.prompt === 'string' ? entry.prompt : '';
+        });
+        return { run, prompts };
+    }
+
+    test('runs the same attempt loop: log, file set, token totals, and a fix prompt that carries the task', async () => {
+        let validations = 0;
+        const { run, prompts } = await runFakeCodex(
+            [[], [{ path: job.absoluteOutputPath, content: 'fn main() { return; }' }, { path: join(workspace, 'notes.txt'), content: 'extra' }]],
+            async () => (++validations === 1 ? { ok: false, issues: ['[diagnostic] Missing main'] } : { ok: true, issues: [] }),
+            { fixIterations: 2, retryIterations: 1 }
+        );
+
+        expect(run.validation?.ok).toBe(true);
+        expect(run.attemptLog.map((attempt) => [attempt.kind, attempt.session, attempt.issueCount])).toEqual([['initial', 1, 2], ['fix', 1, 0]]);
+        expect(run.extraFiles).toEqual([join(workspace, 'notes.txt')]);
+        expect(run.usage).toMatchObject({ totalTokens: 220, inputTokens: 200, outputTokens: 20 });
+        // Every Codex call is a fresh conversation, so the fix pass restates the task.
+        expect(prompts).toHaveLength(2);
+        expect(prompts[1].startsWith(run.task.prompt)).toBe(true);
+        expect(prompts[1]).toContain('Fix pass 1');
+    });
+
+    test('does not offer Lanzer tools it cannot serve', async () => {
+        const { run } = await runFakeCodex([[{ path: job.absoluteOutputPath, content: 'x' }]], async () => ({ ok: true, issues: [] }));
+        expect(run.task.prompt).not.toContain('mcp__lanzer__');
+    });
+
+    test('abandons fix passes that stop changing the findings', async () => {
+        const { run } = await runFakeCodex(
+            [[{ path: job.absoluteOutputPath, content: 'x' }]],
+            async () => ({ ok: false, issues: ['[diagnostic] the same thing'] }),
+            { fixIterations: 6, retryIterations: 1 }
+        );
+        expect(run.attemptLog.map((attempt) => attempt.kind)).toEqual(['initial', 'fix', 'fix']);
+    });
+});

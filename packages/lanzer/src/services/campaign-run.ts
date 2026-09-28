@@ -1,6 +1,7 @@
 import {
     LANZER_TOOL_PROMPT_NAMES,
     LanzerRunStageError,
+    lanzerTransportServesTools,
     runLanzerCampaignTaskOverAcp,
     type LanzerAgentRunResult
 } from '../acp/run.js';
@@ -92,15 +93,18 @@ async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: 
 /**
  * The task {@link runLanzerCampaign} would send the agent for this campaign, without running it.
  *
- * Built from the same host policy, DSL skill and tool set as a run — every run serves both Lanzer
- * tools — so a `plan --prompt` preview is the prompt `generate` sends, not an approximation of it.
+ * Built from the same host policy, DSL skill and tool set as a run, so a `plan --prompt` preview is
+ * the prompt `generate` sends, not an approximation of it. Pass the agent settings the run would
+ * use: over a transport that cannot serve Lanzer's tools, the prompt does not offer them.
  */
 export async function previewLanzerCampaignTask(
     resolved: LanzerResolvedCampaign,
-    service: LanzerService
+    service: LanzerService,
+    agent?: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args'>
 ): Promise<LanzerCampaignTaskPayload> {
     const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, service);
-    return buildLanzerCampaignTask(jobs, policy, dslSkill, LANZER_TOOL_PROMPT_NAMES);
+    const tools = !agent || lanzerTransportServesTools(agent) ? LANZER_TOOL_PROMPT_NAMES : undefined;
+    return buildLanzerCampaignTask(jobs, policy, dslSkill, tools);
 }
 
 /**
