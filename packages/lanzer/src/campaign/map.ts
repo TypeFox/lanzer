@@ -1,6 +1,5 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { GrammarAST, type AstNode } from 'langium';
 import type {
     Campaign,
     CampaignFile,
@@ -15,7 +14,8 @@ import type {
     SymbolRequirement
 } from '../generated/ast.js';
 import type { LanzerDocumentSpec, LanzerWorkspaceFolder } from '../services/types.js';
-import { asLiteral, hasStringName } from '../util/guards.js';
+import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
+import { asLiteral } from '../util/guards.js';
 import {
     LANZER_COMBINATORS,
     LANZER_PSEUDO_CLASS_KINDS,
@@ -54,7 +54,7 @@ export function mapLanzerCampaignFile(
     options: MapLanzerCampaignFileOptions = {}
 ): LanzerCampaignSpec[] {
     const baseDir = options.baseDir ?? inferBaseDir(options.sourceUri);
-    const imports = model.imports.map((imp) => normalizeRequiredString(imp.path));
+    const imports = model.imports.map((imp) => imp.path);
     return model.campaigns.map((campaign) => mapCampaign(campaign, {
         sourceUri: options.sourceUri,
         baseDir,
@@ -72,10 +72,10 @@ export function mapCampaign(
 ): LanzerCampaignSpec {
     return {
         name: campaign.name,
-        description: normalizeString(campaign.description),
+        description: campaign.description,
         sourceUri: options.sourceUri,
         baseDir: options.baseDir ?? inferBaseDir(options.sourceUri),
-        workspaceRoot: normalizeString(campaign.workspaceRoot),
+        workspaceRoot: campaign.workspaceRoot,
         imports: options.imports ?? [],
         files: campaign.files.map((file) => mapFile(file)),
         supportFiles: campaign.supportFiles.map((file) => mapSupportFile(file)),
@@ -125,9 +125,9 @@ export function resolveLanzerCampaigns(
 function mapFile(file: FileSpec): LanzerRuntimeFileSpec {
     return {
         alias: file.name,
-        path: normalizeRequiredString(file.path),
+        path: file.path,
         rootRule: file.rootRule,
-        description: normalizeString(file.description),
+        description: file.description,
         requirements: file.requirements.map((requirement) => mapRequirement(requirement))
     };
 }
@@ -135,8 +135,8 @@ function mapFile(file: FileSpec): LanzerRuntimeFileSpec {
 function mapSupportFile(file: SupportFileSpec): LanzerRuntimeSupportFileSpec {
     return {
         alias: file.name,
-        path: normalizeRequiredString(file.path),
-        description: normalizeString(file.description)
+        path: file.path,
+        description: file.description
     };
 }
 
@@ -200,8 +200,8 @@ function mapSelector(selector: Selector): LanzerSelector {
 function mapSelectorPart(part: SelectorPart): LanzerSelectorPart {
     const ruleNode = part.rule?.ref;
     return {
-        rule: part.rule?.ref?.name ?? part.rule?.$refText ?? '<unresolved>',
-        astType: resolveAstType(ruleNode),
+        rule: part.rule?.ref?.name ?? part.rule?.$refText ?? UNRESOLVED_AST_TYPE,
+        astType: astTypeOfRule(ruleNode),
         predicates: part.predicates.map((predicate) => mapPredicate(predicate)),
         pseudos: part.pseudos.map((pseudo) => mapPseudoClass(pseudo))
     };
@@ -213,8 +213,8 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
         const crossRef: LanzerCrossRefPredicate = {
             kind: 'crossRef',
             property: predicate.property,
-            targetRule: predicate.targetRule.ref?.name ?? predicate.targetRule.$refText ?? '<unresolved>',
-            targetAstType: resolveAstType(targetNode),
+            targetRule: predicate.targetRule.ref?.name ?? predicate.targetRule.$refText ?? UNRESOLVED_AST_TYPE,
+            targetAstType: astTypeOfRule(targetNode),
             nestedPredicates: predicate.nestedPredicates.map((nested) => mapPredicate(nested))
         };
         return crossRef;
@@ -224,7 +224,7 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
             kind: 'value',
             property: predicate.property,
             op: asLiteral(predicate.op, LANZER_VALUE_PREDICATE_OPS) ?? '=',
-            value: normalizeRequiredString(predicate.value ?? '""')
+            value: predicate.value ?? ''
         };
         return value;
     }
@@ -240,47 +240,6 @@ function mapPseudoClass(pseudo: PseudoClass): LanzerPseudoClass {
         kind: asLiteral(pseudo.kind, LANZER_PSEUDO_CLASS_KINDS) ?? 'has',
         selector: mapSelector(pseudo.selector)
     };
-}
-
-function resolveAstType(node: AstNode | undefined): string {
-    if (!node) {
-        return '<unresolved>';
-    }
-    if (GrammarAST.isParserRule(node)) {
-        // `returns X` is explicit: the rule produces nodes of type X.
-        if (node.returnType?.ref?.name) return node.returnType.ref.name;
-        // Otherwise prefer the rule's own name. For rules declared `infers Y` the body
-        // typically narrows back to the rule's name via `{infer RuleName}` actions, so
-        // selector references should target that more specific type.
-        return node.name;
-    }
-    if (GrammarAST.isTerminalRule(node)) {
-        return node.name;
-    }
-    if (GrammarAST.isInferredType(node) || GrammarAST.isInterface(node) || GrammarAST.isType(node)) {
-        return node.name;
-    }
-    if (hasStringName(node)) {
-        return node.name;
-    }
-    return '<unresolved>';
-}
-
-function normalizeString(value: string | undefined): string | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
-    if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith('\'') && value.endsWith('\''))
-    ) {
-        return value.slice(1, -1);
-    }
-    return value;
-}
-
-function normalizeRequiredString(value: string): string {
-    return normalizeString(value) ?? value;
 }
 
 function inferBaseDir(sourceUri: string | undefined): string | undefined {

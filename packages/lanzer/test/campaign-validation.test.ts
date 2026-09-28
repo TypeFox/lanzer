@@ -65,6 +65,31 @@ describe('campaign authoring validation', () => {
     });
 });
 
+describe('campaigns importing more than one grammar', () => {
+    /** Mini and Other both declare `Fn`: Mini's has `params`, Other's has `label`. */
+    const twoGrammars = (requirement: string) => [
+        'import "mini.langium"',
+        'import "other.langium"',
+        'campaign demo {',
+        '    workspace "out"',
+        `    file main at "main.mini" generates Module { ${requirement} }`,
+        '}'
+    ].join('\n');
+
+    test('a type both declare means the first import\'s type, as references resolve it', async () => {
+        expect((await loadCampaign(twoGrammars('require Fn[params]'))).issues).toEqual([]);
+    });
+
+    test('properties of the later import\'s same-named type are not mixed in', async () => {
+        expect((await loadCampaign(twoGrammars('require Fn[label]'))).issues.map((issue) => issue.message))
+            .toEqual(["Type 'Fn' has no property 'label'."]);
+    });
+
+    test('types only the later import declares are still known', async () => {
+        expect((await loadCampaign(twoGrammars('require Doc'))).issues).toEqual([]);
+    });
+});
+
 describe('campaign mapping', () => {
     test('maps files, paths and selectors to specs', async () => {
         const [campaign] = await loadCampaignSpecs(miniCampaign('require Fn[name="main"] > Param'));
@@ -91,5 +116,19 @@ describe('campaign mapping', () => {
                 ]
             }
         }]);
+    });
+
+    test('a value that itself begins and ends with quotes keeps them', async () => {
+        const [campaign] = await loadCampaignSpecs([
+            'import "mini.langium"',
+            'campaign demo {',
+            '    description "\\"quoted\\""',
+            '    workspace "out"',
+            '    file main at "main.mini" generates Module { require Fn[name="\'x\'"] }',
+            '}'
+        ].join('\n'));
+        expect(campaign.description).toBe('"quoted"');
+        const [requirement] = campaign.files[0].requirements;
+        expect(requirement.selector.parts[0].predicates).toEqual([{ kind: 'value', property: 'name', op: '=', value: "'x'" }]);
     });
 });

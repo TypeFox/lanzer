@@ -5,14 +5,14 @@ import {
     AstUtils,
     GrammarAST,
     URI,
-    type AstNode,
     type AstReflection,
     type LangiumCoreServices,
     type ValidationAcceptor
 } from 'langium';
 import { interpretAstReflection } from 'langium/grammar';
 import * as ast from '../generated/ast.js';
-import { hasStringName } from '../util/guards.js';
+import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
+import { CompositeAstReflection } from '../grammar/composite-reflection.js';
 import { buildContainmentGraph, type ContainmentGraph } from '../grammar/reachability.js';
 
 interface SelectorValidationContext {
@@ -65,7 +65,7 @@ export class LanzerSelectorValidator {
         let prevCombinator: string | undefined = selector.leadingCombinator;
 
         selector.parts.forEach((part, index) => {
-            const partType = resolveAstType(part.rule?.ref);
+            const partType = astTypeOfRule(part.rule?.ref);
             if (index === 0) {
                 if (prevType && prevCombinator) {
                     this.checkReachability(prevType, partType, prevCombinator, part, context, accept);
@@ -82,7 +82,7 @@ export class LanzerSelectorValidator {
 
         // Recurse into pseudo-classes — each is rooted at the part it adorns
         for (const part of selector.parts) {
-            const partType = resolveAstType(part.rule?.ref);
+            const partType = astTypeOfRule(part.rule?.ref);
             for (const pseudo of part.pseudos) {
                 this.validateSelector(pseudo.selector, { astType: partType }, context, accept);
             }
@@ -95,8 +95,8 @@ export class LanzerSelectorValidator {
         context: SelectorValidationContext,
         accept: ValidationAcceptor
     ): void {
-        const astType = resolveAstType(part.rule?.ref);
-        if (astType === '<unresolved>') return;
+        const astType = astTypeOfRule(part.rule?.ref);
+        if (astType === UNRESOLVED_AST_TYPE) return;
 
         if (!context.reflection.getAllTypes().includes(astType)) {
             accept('error', `Unknown AST type '${astType}'.`, { node: part, property: 'rule' });
@@ -136,8 +136,8 @@ export class LanzerSelectorValidator {
                 });
                 return;
             }
-            const targetType = resolveAstType(predicate.targetRule.ref);
-            if (targetType === '<unresolved>') return;
+            const targetType = astTypeOfRule(predicate.targetRule.ref);
+            if (targetType === UNRESOLVED_AST_TYPE) return;
             if (!context.reflection.isSubtype(targetType, propMeta.referenceType)) {
                 accept('error', `Cross-reference '${predicate.property}' targets '${propMeta.referenceType}', not '${targetType}'.`, {
                     node: predicate,
@@ -162,7 +162,7 @@ export class LanzerSelectorValidator {
         context: SelectorValidationContext,
         accept: ValidationAcceptor
     ): void {
-        if (parent === '<unresolved>' || child === '<unresolved>') return;
+        if (parent === UNRESOLVED_AST_TYPE || child === UNRESOLVED_AST_TYPE) return;
 
         const kind = combinator === '>' ? 'direct' : 'descendant';
         if (!canReach(parent, child, context.containment, context.reflection, kind)) {
@@ -197,7 +197,7 @@ export class LanzerSelectorValidator {
             return null;
         }
         const reflections = grammars.map((grammar) => interpretAstReflection(grammar));
-        const reflection = reflections.length === 1 ? reflections[0] : mergeReflections(reflections);
+        const reflection = reflections.length === 1 ? reflections[0] : new CompositeAstReflection(reflections);
         const containment = buildContainmentGraph(grammars);
         return { reflection, containment };
     }
@@ -209,7 +209,7 @@ export class LanzerSelectorValidator {
         if (!baseDir) return [];
         const toBuild: import('langium').LangiumDocument[] = [];
         for (const imp of file.imports) {
-            const path = stripQuotes(imp.path);
+            const path = imp.path.trim();
             if (!path) continue;
             const uri = URI.file(resolve(baseDir, path));
             let document = documents.getDocument(uri);
@@ -246,24 +246,6 @@ export class LanzerSelectorValidator {
     }
 }
 
-function resolveAstType(node: AstNode | undefined): string {
-    if (!node) return '<unresolved>';
-    if (GrammarAST.isParserRule(node)) {
-        if (node.returnType?.ref?.name) return node.returnType.ref.name;
-        return node.name;
-    }
-    if (GrammarAST.isTerminalRule(node)) {
-        return node.name;
-    }
-    if (GrammarAST.isInferredType(node) || GrammarAST.isInterface(node) || GrammarAST.isType(node)) {
-        return node.name;
-    }
-    if (hasStringName(node)) {
-        return node.name;
-    }
-    return '<unresolved>';
-}
-
 function canReach(
     parent: string,
     child: string,
@@ -295,18 +277,6 @@ function expandSubtypes(type: string, reflection: AstReflection): Set<string> {
     return out;
 }
 
-function stripQuotes(value: string | undefined): string | undefined {
-    if (!value) return undefined;
-    if (value.length >= 2) {
-        const first = value[0];
-        const last = value[value.length - 1];
-        if ((first === '"' || first === '\'') && last === first) {
-            return value.slice(1, -1);
-        }
-    }
-    return value;
-}
-
 function findPropertyInSubtypes(
     property: string,
     type: string,
@@ -322,13 +292,4 @@ function findPropertyInSubtypes(
         // ignore unknown types
     }
     return undefined;
-}
-
-function mergeReflections(reflections: AstReflection[]): AstReflection {
-    // Lightweight composite — for authoring validation only, doesn't need subtype caches.
-    const merged = reflections[0];
-    for (let i = 1; i < reflections.length; i++) {
-        Object.assign(merged.types, reflections[i].types);
-    }
-    return merged;
 }

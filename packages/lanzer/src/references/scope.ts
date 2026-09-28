@@ -102,7 +102,7 @@ export class LanzerScopeProvider extends DefaultScopeProvider {
         imp: GrammarImport,
         baseDir: string
     ): GrammarAST.Grammar | undefined {
-        const path = stripQuotes(imp.path);
+        const path = imp.path.trim();
         if (!path) {
             return undefined;
         }
@@ -135,18 +135,4 @@ export class LanzerScopeProvider extends DefaultScopeProvider {
         }
         return undefined;
     }
-}
-
-function stripQuotes(value: string | undefined): string | undefined {
-    if (!value) {
-        return undefined;
-    }
-    if (value.length >= 2) {
-        const first = value[0];
-        const last = value[value.length - 1];
-        if ((first === '"' || first === '\'') && last === first) {
-            return value.slice(1, -1);
-        }
-    }
-    return value;
 }
