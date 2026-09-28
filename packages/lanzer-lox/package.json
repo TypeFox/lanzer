@@ -37,7 +37,7 @@
     },
     "dependencies": {
         "commander": "~11.1.0",
-        "langium": "~4.3.0",
+        "langium": "~4.4.0",
         "langium-lox": "0.0.2",
         "lanzer": "0.0.1"
     },
