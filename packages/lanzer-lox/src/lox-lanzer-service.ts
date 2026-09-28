@@ -6,7 +6,8 @@ import { isClass, isFunctionDeclaration, isLoxProgram, isVariableDeclaration, ty
 import { runProgram } from 'langium-lox/interpreter';
 import {
     DefaultLanzerCampaignRunner,
-    DefaultLanzerService
+    DefaultLanzerService,
+    severityOfIssue
 } from 'lanzer';
 import { LOX_DIAGNOSTIC_CODES, withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
 import type {
@@ -217,6 +218,6 @@ export class LoxLanzerCampaignRunner extends DefaultLanzerCampaignRunner {
     }
 
     protected override failsCleanFile(issue: LanzerDocumentIssue): boolean {
-        return issue.kind !== 'diagnostic' || (issue.severity ?? 1) === 1;
+        return severityOfIssue(issue) === 'error';
     }
 }
