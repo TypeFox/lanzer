@@ -898,7 +898,7 @@ async function executeLanzerTaskOverAcp(
  * declared file set is what appeared on disk — and without this, a run failing on a stray file
  * hands the agent a tool that keeps answering VALID. That is worse than having no tool: the fix
  * prompt says the file set is wrong, the tool says everything is fine, and the agent has nothing
- * it can observe changing. One Type-C campaign spent three attempts and $0.86 in exactly that
+ * it can observe changing. One campaign spent three attempts and $0.86 in exactly that
  * position, its `validate` reporting `ok` every time while the run failed.
  *
  * The tool's description promises that a VALID answer means the run will pass. This is what makes
@@ -1312,7 +1312,7 @@ async function runAttemptLoop(
 
         // A fix pass that returns the same diagnostics as the one before it did not move
         // the file. Repeating the prompt then costs a full turn to be told the same thing:
-        // one Type-C campaign spent eight passes, 22 minutes and $5.31 being told the same
+        // one campaign spent eight passes, 22 minutes and $5.31 being told the same
         // unsatisfiable requirement, with the agent itself saying it had stopped editing.
         let lastIssueSignature = issueSignature(validation);
         let stalledPasses = 0;

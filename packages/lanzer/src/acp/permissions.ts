@@ -187,7 +187,7 @@ const CLAUDE_TOOLS_BY_KIND: Readonly<Record<LanzerToolKind, readonly string[]>> 
  * buckets as loading the DSL skill — so a policy keyed on kind either admits all of them or breaks
  * skill loading.
  *
- * They are not hypothetical. In one Type-C run the agent used `Monitor` to execute
+ * They are not hypothetical. In one campaign run the agent used `Monitor` to execute
  * `rm -f module.json …` while `execute` was denied, spawned sub-agents through `Task` to research
  * the failure, and called `ScheduleWakeup` to defer work past the end of the run — the three
  * together turning a single campaign into 10 attempts, 22 minutes and $5.31. A batch run has no
