@@ -105,6 +105,41 @@ describe('checking behaviour', () => {
         expect(seen).toMatchObject({ uri: expect.objectContaining({ path: expect.stringMatching(/\/out\/main\.mini$/) }) });
     });
 
+    // Every expectation kind, plain and negated, both holding and failing, against one output.
+    const OUTPUT = '1\n2\n3\n';
+    const SHOWN = JSON.stringify(OUTPUT);
+    test.each([
+        ['expect runs', undefined],
+        ['expect output "1\\n2\\n3"', undefined],
+        ['expect output "3\\n2\\n1"', `output must be exactly "3\\n2\\n1"`],
+        ['expect not output "3\\n2\\n1"', undefined],
+        ['expect not output "1\\n2\\n3\\n"', `output must not be exactly "1\\n2\\n3\\n"`],
+        ['expect output contains "2"', undefined],
+        ['expect output contains "9"', 'output must contain "9"'],
+        ['expect not output contains "9"', undefined],
+        ['expect not output contains "2"', 'output must not contain "2"'],
+        ['expect output matches "^1\\n2"', undefined],
+        ['expect output matches "^2"', 'output must match /^2/'],
+        ['expect not output matches "^2"', undefined],
+        ['expect not output matches "^1"', 'output must not match /^1/']
+    ])('%s', async (clause, failure) => {
+        const result = await check(`run main { ${clause} }`, async () => ran(OUTPUT));
+        expect(result?.issues).toEqual(failure ? [`Run of 'main': ${failure}, but was ${SHOWN}`] : []);
+        expect(result?.ok).toBe(failure === undefined);
+    });
+
+    test('a run that does not complete fails once, and its output checks are not evaluated', async () => {
+        const result = await check('run main { expect runs expect output "never" expect output contains "x" }', async () => ({
+            completed: false, output: 'partial\n', error: 'boom', timedOut: false, durationMs: 1
+        }));
+        expect(result?.issues).toEqual([`Run of 'main' stopped on a runtime error: boom. Output so far: "partial\\n"`]);
+    });
+
+    test('a timed-out run is reported as a timeout, not an error', async () => {
+        const result = await check('run main { expect runs }', async () => ({ completed: false, output: '', timedOut: true, durationMs: 5000 }));
+        expect(result?.issues).toEqual([`Run of 'main' timed out. Output so far: ""`]);
+    });
+
     test('long output is quoted only in part', async () => {
         const result = await check('run main { expect output "short" }', async () => ran('x'.repeat(1000)));
         expect(result?.issues[0]).toMatch(/but was "x{400}…"$/);
