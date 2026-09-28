@@ -18,6 +18,8 @@ import { buildContainmentGraph, type ContainmentGraph } from '../grammar/reachab
 interface SelectorValidationContext {
     reflection: AstReflection;
     containment: ContainmentGraph;
+    /** The AST types the imported grammars' entry rules produce: every parsed file's root is one. */
+    entryTypes: { rule: string; astType: string }[];
 }
 
 const CONTEXT_PENDING = Symbol('lanzer-selector-context-pending');
@@ -47,6 +49,28 @@ export class LanzerSelectorValidator {
         this.validateSelector(requirement.selector, undefined, context, accept);
     }
 
+    /**
+     * A file's `generates` rule must be one its root can actually be. The host language parses every
+     * file from its entry rule, so any other rule — a statement, an expression — can never be the
+     * root, and a campaign naming one asks for a file that cannot exist.
+     */
+    async validateFileRoot(file: ast.FileSpec, accept: ValidationAcceptor): Promise<void> {
+        const root = AstUtils.findRootNode(file);
+        if (!ast.isCampaignFile(root)) return;
+        const context = await this.getContext(root);
+        if (!context || context.entryTypes.length === 0) return;
+
+        const rootType = astTypeOfRule(file.rootRule.ref);
+        if (rootType === UNRESOLVED_AST_TYPE) return;
+        if (context.entryTypes.some((entry) => context.reflection.isSubtype(entry.astType, rootType))) return;
+
+        const entries = context.entryTypes.map((entry) => `'${entry.rule}'`).join(', ');
+        accept('error', `'${file.rootRule.$refText}' cannot be the root of a generated file: the host language parses every file from its entry rule ${entries}.`, {
+            node: file,
+            property: 'rootRule'
+        });
+    }
+
     protected validateSelector(
         selector: ast.Selector,
         carryFromOuter: { astType: string } | undefined,
@@ -60,9 +84,11 @@ export class LanzerSelectorValidator {
             this.validatePart(part, context, accept);
         }
 
-        // Validate combinator reachability between adjacent parts
+        // Validate combinator reachability between adjacent parts. Inside `:has(...)`/`:not(...)`
+        // the first part is matched below the adorned node at any depth unless a leading `>` says
+        // otherwise, exactly as the evaluator does.
         let prevType: string | undefined = carryFromOuter?.astType;
-        let prevCombinator: string | undefined = selector.leadingCombinator;
+        let prevCombinator: string | undefined = selector.leadingCombinator ?? (carryFromOuter ? '>>' : undefined);
 
         selector.parts.forEach((part, index) => {
             const partType = astTypeOfRule(part.rule?.ref);
@@ -199,7 +225,10 @@ export class LanzerSelectorValidator {
         const reflections = grammars.map((grammar) => interpretAstReflection(grammar));
         const reflection = reflections.length === 1 ? reflections[0] : new CompositeAstReflection(reflections);
         const containment = buildContainmentGraph(grammars);
-        return { reflection, containment };
+        const entryTypes = grammars.flatMap((grammar) => grammar.rules
+            .filter((rule) => GrammarAST.isParserRule(rule) && rule.entry)
+            .map((rule) => ({ rule: rule.name, astType: astTypeOfRule(rule) })));
+        return { reflection, containment, entryTypes };
     }
 
     protected async loadGrammars(file: ast.CampaignFile): Promise<GrammarAST.Grammar[]> {
@@ -259,7 +288,10 @@ function canReach(
         const reachable = map.get(parentType);
         if (!reachable) continue;
         for (const reachableType of reachable) {
-            if (reflection.isSubtype(reachableType, child)) return true;
+            // Either the slot's declared type is a kind of the requested one, or the requested type
+            // is one of the kinds the slot accepts — `body += Stmt` holds `Ret` nodes when
+            // `Stmt: Call | Ret`, so `Fn > Ret` is reachable through a slot typed `Stmt`.
+            if (reflection.isSubtype(reachableType, child) || reflection.isSubtype(child, reachableType)) return true;
         }
     }
     return false;

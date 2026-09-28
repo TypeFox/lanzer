@@ -126,7 +126,8 @@ function mapFile(file: FileSpec): LanzerRuntimeFileSpec {
     return {
         alias: file.name,
         path: file.path,
-        rootRule: file.rootRule,
+        rootRule: file.rootRule.ref?.name ?? file.rootRule.$refText,
+        rootAstType: astTypeOfRule(file.rootRule.ref),
         description: file.description,
         requirements: file.requirements.map((requirement) => mapRequirement(requirement))
     };

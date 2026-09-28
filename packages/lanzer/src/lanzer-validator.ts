@@ -20,7 +20,8 @@ export function registerValidationChecks(services: LanzerLanguageServices): void
     const selectorRegistration: ValidationChecks<LanzerAstType> = {
         SymbolRequirement: selectorChecks.validateRequirement.bind(selectorChecks),
         CountRequirement: selectorChecks.validateRequirement.bind(selectorChecks),
-        ForbidRequirement: selectorChecks.validateRequirement.bind(selectorChecks)
+        ForbidRequirement: selectorChecks.validateRequirement.bind(selectorChecks),
+        FileSpec: selectorChecks.validateFileRoot.bind(selectorChecks)
     };
     registry.register(selectorRegistration, selectorChecks);
 }

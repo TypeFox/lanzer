@@ -18,7 +18,9 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
                 this.checkUniqueArtifactPaths,
                 this.checkNonEmptyWorkspaceRoot
             ],
-            CountRequirement: this.checkPositiveCount,
+            CountRequirement: [this.checkPositiveCount, this.checkFileScopeInsideFile],
+            SymbolRequirement: this.checkFileScopeInsideFile,
+            ForbidRequirement: this.checkFileScopeInsideFile,
             GrammarImport: this.checkNonEmptyImportPath
         };
     }
@@ -77,6 +79,25 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
                 property: 'count'
             });
         }
+    };
+
+    /**
+     * A requirement written inside a file block is checked against that file, so `in <other>` there
+     * would say one thing and do another. Targeting another file belongs at campaign level.
+     */
+    checkFileScopeInsideFile = (
+        node: ast.SymbolRequirement | ast.CountRequirement | ast.ForbidRequirement,
+        accept: ValidationAcceptor
+    ): void => {
+        const owner = node.$container;
+        const target = node.file?.ref;
+        if (!ast.isFileSpec(owner) || !target || target === owner) {
+            return;
+        }
+        accept('error', `A requirement inside file '${owner.name}' always applies to '${owner.name}'; declare it at campaign level to target '${target.name}'.`, {
+            node,
+            property: 'file'
+        });
     };
 
     checkNonEmptyImportPath = (node: ast.GrammarImport, accept: ValidationAcceptor): void => {

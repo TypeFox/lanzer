@@ -100,16 +100,14 @@ function walkElement(
                     visitedFragments.delete(target.name);
                 }
             } else {
-                // Unassigned rule call: the target rule produces the same conceptual node here.
-                // Treat its body as a continuation of the current type's body so containment
-                // edges propagate through delegating rules like `Expression: AssignmentExpression;`.
-                const targetType = ruleProducedType(target);
-                if (targetType && !visitedFragments.has(target.name)) {
+                // Unassigned rule call: the node produced here *is* the target's node — `Stmt: Call |
+                // Ret` makes a Stmt that is a Call, not one that contains a Call. Its body is a
+                // continuation of the current type's body, so what the target contains the current
+                // type contains, but no containment edge is recorded to the target itself: that
+                // relation is subtyping, and reachability checks it through the reflection.
+                if (!visitedFragments.has(target.name)) {
                     visitedFragments.add(target.name);
                     walkElement(target.definition, currentType, directChildren, knownTypes, visitedFragments);
-                    if (targetType !== currentType) {
-                        addChild(directChildren, currentType, targetType);
-                    }
                     visitedFragments.delete(target.name);
                 }
             }

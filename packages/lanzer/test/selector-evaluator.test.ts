@@ -62,11 +62,14 @@ describe('selector evaluation', () => {
         expect(await count('Cls > Fn')).toBe(1);
         expect(await count('Cls >> Ret')).toBe(1);
         expect(await count('Fn > Param')).toBe(2);
+        expect(await count('Fn > Ret')).toBe(3);
+        expect(await count('Cls > Fn > Ret')).toBe(1);
     });
 
     test(':has and :not test the subtree of each candidate', async () => {
         expect(await count('Fn:has(Call)')).toBe(1);
         expect(await count('Fn:not(Call)')).toBe(2);
         expect(await count('Fn:has(> Param)')).toBe(1);
+        expect(await count('Fn:has(> Ret)')).toBe(3);
     });
 });

@@ -1,5 +1,6 @@
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
 import type { LanzerGenerationJob } from './jobs.js';
+import type { LanzerRequirementSpec } from './model.js';
 import { formatLanzerRequirement } from './jobs.js';
 
 export interface LanzerAgentTaskPayload {
@@ -234,12 +235,14 @@ function renderPrompt(
         }
     }
 
-    if (job.campaignRequirements.length > 0) {
+    const { scoped, campaignWide } = splitCampaignRequirements(job);
+    if (scoped.length > 0) {
         lines.push('Campaign requirements applying to this file:');
-        for (const requirement of job.campaignRequirements) {
+        for (const requirement of scoped) {
             lines.push(`- ${formatLanzerRequirementForJob(requirement, job.fileAlias)}`);
         }
     }
+    appendCampaignWideRequirements(lines, campaignWide);
 
     lines.push('Generate a concrete file that fits the host language and the surrounding workspace.');
     return lines.join('\n');
@@ -341,13 +344,15 @@ function renderCampaignPrompt(
                 lines.push(`  - ${formatLanzerRequirementForJob(requirement, job.fileAlias)}`);
             }
         }
-        if (job.campaignRequirements.length > 0) {
+        const { scoped } = splitCampaignRequirements(job);
+        if (scoped.length > 0) {
             lines.push('  campaign requirements applying to this file:');
-            for (const requirement of job.campaignRequirements) {
+            for (const requirement of scoped) {
                 lines.push(`  - ${formatLanzerRequirementForJob(requirement, job.fileAlias)}`);
             }
         }
     }
+    appendCampaignWideRequirements(lines, splitCampaignRequirements(firstJob).campaignWide);
 
     lines.push('Generate a coherent concrete file set that fits the host language and the surrounding workspace.');
     return lines.join('\n');
@@ -370,6 +375,33 @@ function appendSelectorSyntaxReference(lines: string[]): void {
     lines.push('- `A:not(<inner>)` — A must contain no subtree matching the inner selector.');
     lines.push('- Inside `:has(...)` and `:not(...)` a leading `>` restricts the inner match to direct children of A; without a leading combinator, the inner selector matches at any depth.');
     lines.push('Each requirement is one of three contracts: `MUST contain <selector>`, `MUST contain at least N node(s) matching <selector>`, or `MUST NOT contain <selector>`. Generate code whose parsed AST satisfies every contract. After the file is written, Lanzer parses it with the host language and rejects the result if any contract is violated.');
+}
+
+/**
+ * A job's campaign requirements, split by how they are checked.
+ *
+ * One naming a file is checked against that file alone. One naming none is checked against every
+ * generated file together — a `min 3 Fn` is met by two in one file and one in another — so listing
+ * it under a single file would misstate the contract.
+ */
+function splitCampaignRequirements(job: LanzerGenerationJob): {
+    scoped: LanzerRequirementSpec[];
+    campaignWide: LanzerRequirementSpec[];
+} {
+    return {
+        scoped: job.campaignRequirements.filter((requirement) => requirement.fileAlias !== undefined),
+        campaignWide: job.campaignRequirements.filter((requirement) => requirement.fileAlias === undefined)
+    };
+}
+
+function appendCampaignWideRequirements(lines: string[], requirements: LanzerRequirementSpec[]): void {
+    if (requirements.length === 0) {
+        return;
+    }
+    lines.push('Campaign-wide requirements, checked across all generated files together (any file may satisfy them, and `MUST NOT` applies to every file):');
+    for (const requirement of requirements) {
+        lines.push(`- ${formatLanzerRequirement(requirement)}`);
+    }
 }
 
 function formatLanzerRequirementForJob(

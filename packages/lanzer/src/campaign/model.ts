@@ -21,6 +21,8 @@ export interface LanzerFileSpec {
     alias: string;
     path: string;
     rootRule: string;
+    /** The AST type `rootRule` produces; the generated file's root node must be one. */
+    rootAstType: string;
     description?: string;
     requirements: LanzerRequirementSpec[];
 }

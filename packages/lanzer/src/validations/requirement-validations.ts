@@ -25,7 +25,7 @@ export function validateRequirementsAgainstDocuments(
     reflection: AstReflection
 ): LanzerCampaignCheckValidationResult {
     const issues: string[] = [];
-    const rootsByAlias = mapFileAliasesToRoots(campaign, documents, issues);
+    const rootsByAlias = mapFileAliasesToRoots(campaign, documents, reflection, issues);
 
     for (const file of campaign.files) {
         const root = rootsByAlias.get(file.alias);
@@ -101,6 +101,7 @@ function checkRequirement(
 function mapFileAliasesToRoots(
     campaign: LanzerCampaignSpec,
     documents: LangiumDocument[],
+    reflection: AstReflection,
     issues: string[]
 ): Map<string, AstNode> {
     const roots = new Map<string, AstNode>();
@@ -118,7 +119,11 @@ function mapFileAliasesToRoots(
             issues.push(`Generated file for '${file.alias}' was not found, or is not a document of the target language: ${absolute}`);
             continue;
         }
-        roots.set(file.alias, doc.parseResult.value);
+        const root = doc.parseResult.value;
+        if (!reflection.isSubtype(root.$type, file.rootAstType)) {
+            issues.push(`Generated file for '${file.alias}' parsed as '${root.$type}', but the campaign declares it generates '${file.rootRule}': ${absolute}`);
+        }
+        roots.set(file.alias, root);
     }
     return roots;
 }
