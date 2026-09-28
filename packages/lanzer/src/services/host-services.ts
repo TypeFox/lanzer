@@ -2,6 +2,7 @@ import {
     GrammarAST,
     inject,
     type AstReflection,
+    type LangiumGeneratedSharedCoreServices,
     type Module
 } from 'langium';
 import {
@@ -37,14 +38,20 @@ import type {
  * **without any change to the language itself**: you import these symbols, you do not edit them.
  * For the Lox language they are `LoxGeneratedSharedModule`, `LoxGeneratedModule`, `LoxModule`,
  * and `LoxAstReflection`, all re-exported from the unmodified `langium-lox` package entry.
+ *
+ * The language services are built by the host rather than from modules handed over, because the
+ * host is the only party that knows their type: `inject` infers it from the modules it is given,
+ * so {@link createServices} returns `THost` exactly, and nothing has to assert it afterwards.
  */
-export interface LanzerHostLanguage {
+export interface LanzerHostLanguage<THost extends LangiumServices> {
     /** langium-cli generated shared module, e.g. `LoxGeneratedSharedModule`. */
-    generatedSharedModule: Module<any, any>;
-    /** langium-cli generated language module, e.g. `LoxGeneratedModule`. */
-    generatedModule: Module<any, any>;
-    /** The host language's own DI module (validator, scope provider, ...), e.g. `LoxModule`. */
-    module: Module<any, any>;
+    generatedSharedModule: Module<LangiumSharedServices, LangiumGeneratedSharedCoreServices>;
+    /**
+     * Build the host language's services on Lanzer's shared container. This is the same `inject`
+     * the language's own `create<Lang>Services` performs, with `shared` handed in instead of
+     * created, e.g. `(shared) => inject(createDefaultModule({ shared }), LoxGeneratedModule, LoxModule)`.
+     */
+    createServices: (shared: LangiumSharedServices) => THost;
     /** Produces the host language's AST reflection, e.g. `() => new LoxAstReflection()`. */
     astReflection: () => AstReflection;
 }
@@ -74,7 +81,7 @@ export interface LanzerHostServices<THost extends LangiumServices = LangiumServi
  * Build a combined Langium service container that hosts an arbitrary Langium language alongside
  * the Lanzer campaign language and the Langium grammar language in one shared workspace. This is
  * the generic core that a per-language helper such as `createLanzerLoxServices` is a thin wrapper
- * around — pass your language's four building blocks and (optionally) its Lanzer service overrides.
+ * around — pass your language's building blocks and (optionally) its Lanzer service overrides.
  *
  * All three languages share a single {@link CompositeAstReflection} because the shared reflection
  * slot is single-valued; the host reflection is listed first so its types win ownership when a
@@ -82,9 +89,9 @@ export interface LanzerHostServices<THost extends LangiumServices = LangiumServi
  * extension declared in its generated `LanguageMetaData`) to the host services, so generated
  * documents are parsed and validated by the host's own validator.
  */
-export function createLanzerHostServices<THost extends LangiumServices = LangiumServices>(
+export function createLanzerHostServices<THost extends LangiumServices>(
     context: DefaultSharedModuleContext,
-    host: LanzerHostLanguage,
+    host: LanzerHostLanguage<THost>,
     overrides: LanzerHostOverrides = {}
 ): LanzerHostServices<THost> {
     const makeService = overrides.service
@@ -110,11 +117,7 @@ export function createLanzerHostServices<THost extends LangiumServices = Langium
         LangiumGrammarGeneratedModule,
         LangiumGrammarModule
     );
-    const hostServices = inject(
-        createDefaultModule({ shared }),
-        host.generatedModule,
-        host.module
-    );
+    const hostServices = host.createServices(shared);
     const Lanzer = inject(
         createDefaultModule({ shared }),
         LanzerGeneratedModule,
@@ -135,8 +138,7 @@ export function createLanzerHostServices<THost extends LangiumServices = Langium
     }
     return {
         shared,
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        host: hostServices as unknown as THost,
+        host: hostServices,
         Lanzer,
         grammar
     };

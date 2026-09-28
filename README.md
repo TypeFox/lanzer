@@ -158,38 +158,6 @@ under another agent would be worse than none. One consequence is honest about it
 MCP transport has no permission callback, and its sandbox cannot separate running commands from
 writing files, so a run there warns that `execute` is not enforced.
 
-#### What the agent is allowed to do
-
-A generation run is unattended, so the agent gets what writing files needs and nothing more:
-`read`, `edit`, `search`, `think`, and `other` (which is where agents put skill loading). Running
-shell commands, deleting or moving files, and reaching the network are all refused unless you ask
-for them.
-
-That default is worth one sentence of explanation. Lanzer confines the agent's reads and writes to
-the campaign's own directories, but that check only covers file access routed through the client —
-an agent that shells out steps around it entirely. Withholding `execute` is what keeps those
-directories a boundary rather than a suggestion.
-
-Widen or narrow it with `LANZER_ACP_ALLOW`, or per-run:
-
-```shell
-# let the agent run commands as well
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer --allow read,edit,search,think,other,execute
-
-# no policy at all
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer --allow-all
-```
-
-The setting is read literally: naming any kind limits the run to exactly those, so the same option
-both widens and narrows. Refusals are printed as they happen (`[perm] denied execute: …`) and are
-named in the next fix pass, so the agent tries another route instead of retrying a closed one.
-
-The policy is keyed on ACP tool *kinds* rather than tool names because Lanzer picks its agent at
-runtime — Claude's `Bash`/`Edit` mean nothing to Codex, and a policy that silently enforced nothing
-under another agent would be worse than none. One consequence is honest about its limits: the Codex
-MCP transport has no permission callback, and its sandbox cannot separate running commands from
-writing files, so a run there warns that `execute` is not enforced.
-
 #### What the agent can call
 
 During a run Lanzer serves the agent a small toolkit **in-process** — no subprocess, no external
