@@ -46,8 +46,8 @@
         "test": "langium generate && tsc -p test/tsconfig.json && vitest run"
     },
     "dependencies": {
-        "@agentclientprotocol/claude-agent-acp": "^0.75.1",
-        "@agentclientprotocol/sdk": "^1.4.0",
+        "@agentclientprotocol/claude-agent-acp": "^0.82.0",
+        "@agentclientprotocol/sdk": "^1.5.1",
         "@modelcontextprotocol/sdk": "^1.17.5",
         "chalk": "~5.3.0",
         "commander": "~11.1.0",

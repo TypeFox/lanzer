@@ -998,17 +998,23 @@ async function openConfiguredSession(
     const tools = allowedClaudeTools(permissions);
     const session = await agent.request(acp.AGENT_METHODS.session_new, {
         cwd: context.sessionCwd,
-        // The agent's own sandbox has to admit what Lanzer points it at; writes to the read-only ones
-        // are still refused by `RecordingClient`, which every file operation goes through.
+        // The agent's own sandbox has to admit what Lanzer points it at. `RecordingClient` refuses
+        // writes to the read-only ones only for an agent that writes through the client's `fs/*`
+        // methods, which ACP leaves optional: `claude-agent-acp` (0.82.0) never calls them, so for
+        // Claude these directories are writable like the rest of its session roots.
         additionalDirectories: [...(options.additionalDirectories ?? []), ...(options.readOnlyDirectories ?? [])],
         mcpServers: toolHost ? [toolHost.descriptor] : [],
         // Claude Code reads its per-session options from here. Every other agent ignores the
-        // key, which is why this is a hint and not the enforcement — that stays in
-        // `RecordingClient.requestPermission`, which all of them go through.
+        // key, which is why this is a hint; `RecordingClient.requestPermission` answers the calls
+        // an agent asks about, but ACP makes asking optional, and Claude in `acceptEdits` does
+        // not ask before editing. The permission mode is not among these options: the adapter
+        // ignores one sent here, so it is set below instead.
         _meta: {
             claudeCode: {
                 options: {
-                    permissionMode: permissionModeFor(permissions),
+                    // Without this the adapter offers `bypassPermissions`, and a user whose own
+                    // settings default to it would run Lanzer with no permission check at all.
+                    allowDangerouslySkipPermissions: false,
                     // An allowlist, not a deny-list: `tools` replaces the agent's default set
                     // outright, so anything Lanzer did not name is unreachable — including the
                     // harness tools whose ACP kind is indistinguishable from ones the run needs.
@@ -1018,10 +1024,16 @@ async function openConfiguredSession(
         }
     });
 
-    if (options.sessionModeId && session.modes) {
+    // The session otherwise opens in whatever mode the user's own agent settings default to. An
+    // explicit mode is sent as given; the policy's mode only when the agent offers it, since mode
+    // ids are the agent's own and another agent may name none of Claude Code's.
+    const policyMode = permissionModeFor(permissions);
+    const modeId = options.sessionModeId
+        ?? (session.modes?.availableModes.some((mode) => mode.id === policyMode) ? policyMode : undefined);
+    if (modeId && session.modes && session.modes.currentModeId !== modeId) {
         await agent.request(acp.AGENT_METHODS.session_set_mode, {
             sessionId: session.sessionId,
-            modeId: options.sessionModeId
+            modeId
         });
     }
 

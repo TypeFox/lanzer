@@ -165,14 +165,17 @@ export function describePermissionPolicy(policy: LanzerPermissionPolicy): string
  *
  * `think` maps to no tool: thinking is not one. `other` maps to skill loading only — deliberately
  * not the harness tools that also land in that bucket.
+ *
+ * Names as of the Claude Code build `claude-agent-acp` 0.82.0 ships (agent SDK 0.3.280), where
+ * `NotebookRead`, `BashOutput` and `KillShell` no longer exist.
  */
 const CLAUDE_TOOLS_BY_KIND: Readonly<Record<LanzerToolKind, readonly string[]>> = {
-    read: ['Read', 'NotebookRead'],
+    read: ['Read'],
     edit: ['Write', 'Edit', 'NotebookEdit'],
     delete: [],
     move: [],
     search: ['Glob', 'Grep'],
-    execute: ['Bash', 'BashOutput', 'KillShell'],
+    execute: ['Bash'],
     think: [],
     fetch: ['WebFetch', 'WebSearch'],
     switch_mode: [],
@@ -192,8 +195,18 @@ const CLAUDE_TOOLS_BY_KIND: Readonly<Record<LanzerToolKind, readonly string[]>> 
  * the failure, and called `ScheduleWakeup` to defer work past the end of the run — the three
  * together turning a single campaign into 10 attempts, 22 minutes and $5.31. A batch run has no
  * user to ask, no next turn to wake into, and no reason to delegate.
+ *
+ * `Agent` is what `Task` is called now; `Workflow` fans out sub-agents too, the worktree tools move
+ * the session out of the workspace it was given, and `RemoteTrigger` and `PushNotification` reach
+ * past the run. The older names stay listed for agents that still use them.
  */
 const INTERACTIVE_ONLY_TOOLS = [
+    'Agent',
+    'Workflow',
+    'EnterWorktree',
+    'ExitWorktree',
+    'RemoteTrigger',
+    'PushNotification',
     'Task',
     'Monitor',
     'ScheduleWakeup',
