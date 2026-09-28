@@ -1,0 +1,26 @@
+// A test-driver campaign: the program is run from a provided support file, driver.lox, which calls
+// the functions the agent generates in lib.lox and prints the results. The expected output is then
+// the functions' return values, so it cannot be met by printing it — and editing the driver fails
+// the run. Lox resolves top-level names across files, so the driver sees lib.lox's functions.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign geometryLox {
+    description "A small geometry library in typed Lox, exercised by a provided test driver."
+    workspace "geometry"
+
+    file lib at "lib.lox" generates LoxProgram {
+        description "square(n), rectangleArea(w, h), hypotenuseSquared(a, b) built on square, and isRightTriangle(a, b, c)."
+        require FunctionDeclaration[name="square"]
+        require FunctionDeclaration[name="rectangleArea"]
+        require FunctionDeclaration[name="hypotenuseSquared"] >> MemberCall[element->FunctionDeclaration[name="square"]]
+        require FunctionDeclaration[name="isRightTriangle"]
+        forbid PrintStatement
+    }
+
+    support driver at "driver.lox" description "The provided test driver; do not change it."
+
+    run driver {
+        expect runs
+        expect output "9\n10\n25\ntrue\nfalse\n"
+    }
+}

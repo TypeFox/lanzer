@@ -3,7 +3,8 @@
 // Splits reusable arithmetic helpers into one .lox file and the program entry
 // point into another, with both file-local and campaign-level requirements.
 // Demonstrates higher-order/typed functions and the langium-lox constraints
-// (mandatory types, no classes, no modulo).
+// (mandatory types, no modulo). `forbid Class` keeps it to plain functions: a choice
+// of this campaign, since langium-lox supports classes.
 
 import "../../../packages/langium-lox/langium/src/language-server/lox.langium"
 

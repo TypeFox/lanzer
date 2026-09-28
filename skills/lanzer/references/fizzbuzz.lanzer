@@ -1,0 +1,28 @@
+// A campaign with a behaviour check, targeting the Lox grammar.
+//
+// Requirements say what the code must contain; the `run` block says what running it must print.
+// Lox has no `%`, so the requirements ask for a divisibility helper, and the exact output check
+// confirms it works. Every kind of expectation is shown. For the pattern where a provided support
+// file drives the generated code, see packages/lanzer-lox/examples/geometry.lanzer.
+
+import "../../../packages/langium-lox/langium/src/language-server/lox.langium"
+
+campaign loxFizzBuzz {
+    description "Print FizzBuzz for 1 through 15: Fizz for multiples of 3, Buzz for multiples of 5, FizzBuzz for both, else the number."
+    workspace "out"
+
+    file main at "fizzbuzz.lox" generates LoxProgram {
+        description "A divisibleBy(n, d) helper (Lox has no modulo) and a fizzbuzz(n) that prints each line."
+        require FunctionDeclaration[name="divisibleBy"]
+        require FunctionDeclaration[name="fizzbuzz"] >> MemberCall[element->FunctionDeclaration[name="divisibleBy"]]
+    }
+
+    // Runs once the file is valid. The entry is the declared file the program starts from.
+    run main {
+        expect runs                                    // finishes: no runtime error, no timeout
+        expect output "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n"
+        expect output contains "FizzBuzz"              // substring
+        expect not output contains "nil"               // `not` inverts any output check
+        expect output matches "^1\\n2\\nFizz\\n"      // regex; backslashes doubled in the string
+    }
+}

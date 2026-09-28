@@ -214,8 +214,13 @@ the fix prompt and in the agent's `validate` tool. The agent sees the expected o
 pair it with requirements that make it compute rather than print the answer. A host runs programs
 by implementing `execute` on its service (see [Plugging in your own DSL](#plugging-in-your-own-dsl));
 Lox runs them in-process with its interpreter. A campaign with `run` blocks against a host that
-cannot run programs fails rather than passing unchecked. See
-[`examples/factorial.lanzer`](packages/lanzer-lox/examples/factorial.lanzer).
+cannot run programs fails rather than passing unchecked.
+
+Examples, each tested to pass with a correct program and to fail with a wrong one:
+[`factorial.lanzer`](packages/lanzer-lox/examples/factorial.lanzer) (requirements force recursion),
+[`fizzbuzz.lanzer`](packages/lanzer-lox/examples/fizzbuzz.lanzer) (every kind of `expect`), and
+[`geometry.lanzer`](packages/lanzer-lox/examples/geometry.lanzer), whose run starts from a provided
+[test driver](packages/lanzer-lox/examples/geometry/driver.lox) that calls the generated library.
 
 #### Reports
 

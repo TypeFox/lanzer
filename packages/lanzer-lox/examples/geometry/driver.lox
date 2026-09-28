@@ -1,0 +1,8 @@
+// Test driver for geometry.lanzer. It is provided by the campaign, not generated: it calls the
+// functions the agent writes in lib.lox and prints what they return, so the run checks the values,
+// not whatever the agent chose to print. A run fails if the agent changes this file.
+print square(3);
+print rectangleArea(2, 5);
+print hypotenuseSquared(3, 4);
+print isRightTriangle(3, 4, 5);
+print isRightTriangle(2, 3, 4);
