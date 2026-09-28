@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { EmptyFileSystem } from 'langium';
 import { runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
+import { createLanzerServices } from '../src/lanzer-module.js';
+import { runLanzerCampaign } from '../src/services/campaign-run.js';
+import { DefaultLanzerService } from '../src/services/default-services.js';
+import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../src/services/types.js';
+import type { LanzerResolvedCampaign } from '../src/campaign/model.js';
 import { buildLanzerGenerationJobs, type LanzerGenerationJob } from '../src/campaign/jobs.js';
 import { resolveLanzerCampaign } from '../src/campaign/map.js';
 import { isRecord } from '../src/util/guards.js';
@@ -44,6 +50,7 @@ let dir: string;
 let workspace: string;
 let outside: string;
 let job: LanzerGenerationJob;
+let resolved: LanzerResolvedCampaign;
 
 beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'lanzer-agent-'));
@@ -58,7 +65,8 @@ beforeEach(async () => {
         '    file main at "main.mini" generates Module {}',
         '}'
     ].join('\n'));
-    [job] = buildLanzerGenerationJobs(resolveLanzerCampaign(campaign));
+    resolved = resolveLanzerCampaign(campaign);
+    [job] = buildLanzerGenerationJobs(resolved);
 });
 
 /** Run the fake agent through one prompt per script entry, and return what it logged. */
@@ -139,5 +147,53 @@ describe('declared targets that predate the run', () => {
         const { run } = await runFakeAgent([[{ write: job.absoluteOutputPath, content: 'fn main() { return; }' }]]);
         expect(run.staleFiles).toEqual([]);
         expect(run.validation?.ok).toBe(true);
+    });
+});
+
+describe('the DSL skill', () => {
+    /** A service with no grammar policy and a skill in a directory of its own, outside the workspace. */
+    class SkillOnlyService extends DefaultLanzerService {
+        constructor(private readonly skill: LanzerDslSkillReference) {
+            const { shared, Lanzer } = createLanzerServices(EmptyFileSystem);
+            super(shared, Lanzer);
+        }
+        override async getGenerationPolicy(): Promise<LanzerGenerationPolicy | undefined> {
+            return undefined;
+        }
+        override async dslSkill(): Promise<LanzerDslSkillReference | undefined> {
+            return this.skill;
+        }
+    }
+
+    test('is named by location in the prompt, and readable but not writable during the run', async () => {
+        const skillDir = join(outside, 'mini-skill');
+        const skillFile = join(skillDir, 'SKILL.md');
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(skillFile, '# Writing Mini', 'utf8');
+        const scriptPath = join(dir, 'script.json');
+        const logPath = join(dir, 'agent.log');
+        await writeFile(scriptPath, JSON.stringify([[
+            { read: skillFile },
+            { write: job.absoluteOutputPath, content: 'fn main() { return; }' },
+            { write: skillFile, content: 'changed' }
+        ]]), 'utf8');
+        await writeFile(logPath, '', 'utf8');
+
+        const run = await runLanzerCampaign(resolved, {
+            service: new SkillOnlyService({ name: 'write-mini', path: skillDir }),
+            runner: { validateCampaign: async () => ({ ok: true, documents: [] }) }
+        }, {
+            command: process.execPath,
+            args: [fixture('fake-agent.mjs')],
+            env: { FAKE_AGENT_SCRIPT: scriptPath, FAKE_AGENT_LOG: logPath },
+            maxAttempts: 1
+        });
+
+        expect(run.task.prompt).toContain(`Use the installed agent skill named "write-mini" before generating.`);
+        expect(run.task.prompt).toContain(`If that skill is not available to you, read ${skillFile} directly`);
+        const log = (await readFile(logPath, 'utf8')).split('\n').filter(Boolean).map(toLogEntry);
+        expect(log.map((entry) => [entry.op, entry.ok])).toEqual([['read', true], ['write', true], ['write', false]]);
+        expect(await readFile(skillFile, 'utf8')).toBe('# Writing Mini');
+        expect(run.report?.ok).toBe(true);
     });
 });

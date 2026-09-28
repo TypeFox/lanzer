@@ -133,7 +133,8 @@ export async function runLanzerCampaign(
     // The agent is told to read these; it may, but nothing it is sent to read is its to change.
     const readOnlyDirectories = [
         ...(policy?.grammarReferencePath ? [dirname(policy.grammarReferencePath)] : []),
-        ...(policy?.referenceFiles ?? []).map((file) => dirname(file.path))
+        ...(policy?.referenceFiles ?? []).map((file) => dirname(file.path)),
+        ...(dslSkill?.path ? [dslSkill.path] : [])
     ];
 
     const startedAtMs = Date.now();
