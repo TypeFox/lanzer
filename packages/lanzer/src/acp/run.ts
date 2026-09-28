@@ -489,9 +489,9 @@ class RecordingClient {
         const paths = (locations ?? []).map((l) => l.path).filter((p): p is string => !!p);
         // Build a single fingerprint of (command + paths) and only emit when it changes, so the
         // same detail repeated across initial call + updates prints at most once per tool call.
-        const detailKey = `${command ?? ''} ${paths.join(',')}`;
+        const detailKey = `${command ?? ''}\u0000${paths.join(',')}`;
         const previous = toolCallId ? this.shownToolCommands.get(toolCallId) : undefined;
-        if (detailKey === ' ' || detailKey === previous) {
+        if (detailKey === '\u0000' || detailKey === previous) {
             return;
         }
         if (toolCallId) this.shownToolCommands.set(toolCallId, detailKey);
