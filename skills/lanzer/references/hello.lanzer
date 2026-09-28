@@ -1,8 +1,9 @@
 // A minimal Lanzer campaign targeting the Lox grammar.
 //
 // It asks the generator to produce a single .lox file that defines a `greet`
-// function and a `main`, prints something, and avoids the constructs the
-// langium-lox type checker rejects (classes). Selectors are written against the
+// function and a `main`, prints something, and keeps to plain functions — the
+// `forbid Class` below is this campaign's choice; langium-lox supports classes (see
+// packages/lanzer-lox/examples/classes.lanzer). Selectors are written against the
 // Lox AST (LoxProgram is the entry rule; FunctionDeclaration/PrintStatement/Class
 // are real Lox node types).
 
@@ -24,7 +25,7 @@ campaign loxHello {
         require PrintStatement
         // At least two functions overall.
         min 2 FunctionDeclaration
-        // Classes are unsupported in langium-lox — never emit one.
+        // Keep this program to plain functions (a campaign choice; Lox has classes).
         forbid Class
     }
 }

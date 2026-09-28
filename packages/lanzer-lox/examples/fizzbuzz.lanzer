@@ -1,0 +1,28 @@
+// A behaviour campaign using every kind of `expect`. Lox has no `%`, so the program has to work
+// out divisibility itself — the requirements ask for that helper, the run checks it is right.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign fizzbuzzLox {
+    description "Print FizzBuzz for 1 through 15: Fizz for multiples of 3, Buzz for multiples of 5, FizzBuzz for both, else the number."
+    workspace "test/fizzbuzz"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        description "A divisibleBy(n, d) helper (Lox has no modulo) and a fizzbuzz(n) that prints each line."
+        require FunctionDeclaration[name="divisibleBy"]
+        require FunctionDeclaration[name="fizzbuzz"] >> MemberCall[element->FunctionDeclaration[name="divisibleBy"]]
+        require WhileStatement
+    }
+
+    run mainFile {
+        // The program finishes on its own: no runtime error, no endless loop.
+        expect runs
+        // Exact output; trailing whitespace and blank lines are ignored.
+        expect output "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n"
+        // Substring checks, positive and negative.
+        expect output contains "FizzBuzz"
+        expect not output contains "nil"
+        // Regular expressions over the whole output (backslashes are doubled in the string).
+        expect output matches "^1\\n2\\nFizz\\n"
+        expect not output matches "\\bfizz\\b"
+    }
+}

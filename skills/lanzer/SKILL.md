@@ -288,3 +288,6 @@ Read these concrete, validating example campaigns (they target the Lox grammar, 
 is the same for any host language):
 - `references/hello.lanzer` — a single-file campaign
 - `references/calculator.lanzer` — a multi-file campaign with cross-file requirements
+- `references/fizzbuzz.lanzer` — a `run` block using every kind of `expect`
+- `packages/lanzer-lox/examples/geometry.lanzer` — a `run` from a provided test driver (a support
+  file that calls the generated code), so the check is on return values, not chosen prints
