@@ -2,6 +2,7 @@ import path from 'node:path';
 import type {
     LanzerCampaignSpec,
     LanzerCountRequirementSpec,
+    LanzerDiagnosticExpectation,
     LanzerFileSpec,
     LanzerForbidRequirementSpec,
     LanzerPredicate,
@@ -35,6 +36,8 @@ export interface LanzerGenerationJob {
     grammarBaseDir?: string;
     /** The campaign's `run` blocks, with each entry file's absolute path, for the prompt. */
     runs: LanzerGenerationRun[];
+    /** The diagnostics this file must be rejected with; empty unless it is a near-miss. */
+    diagnostics: LanzerDiagnosticExpectation[];
 }
 
 export interface LanzerGenerationRun extends LanzerRunSpec {
@@ -101,7 +104,8 @@ export function buildLanzerGenerationJobs(
                         ?? run.entryAlias,
                     workspaceRoot
                 )
-            }))
+            })),
+            diagnostics: file.diagnostics
         };
     });
 }

@@ -1,0 +1,16 @@
+// A negative campaign: the program must be almost right and wrong in exactly one way, so it tests
+// the language's validator rather than its interpreter. The expected error names its code and a
+// message pattern; the pattern leaves the types open, since the agent picks them.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign typeMismatchLox {
+    description "A small, otherwise correct program that stores a value of the wrong type in a typed variable."
+    workspace "test/near-miss"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        description "A function computing a total, whose result is assigned to a variable declared with a different type."
+        require FunctionDeclaration
+        require VariableDeclaration
+        expect error code "LOX_TYPE_NOT_ASSIGNABLE" message matches "^Type '\\w+' is not assignable to type '\\w+'"
+    }
+}

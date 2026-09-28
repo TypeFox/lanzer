@@ -16,8 +16,10 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
                 this.checkCampaignHasFiles,
                 this.checkUniqueArtifactNames,
                 this.checkUniqueArtifactPaths,
-                this.checkNonEmptyWorkspaceRoot
+                this.checkNonEmptyWorkspaceRoot,
+                this.checkNoRunsBesideNearMisses
             ],
+            DiagnosticExpectation: this.checkDiagnosticExpectation,
             CountRequirement: [this.checkPositiveCount, this.checkFileScopeInsideFile],
             SymbolRequirement: this.checkFileScopeInsideFile,
             ForbidRequirement: this.checkFileScopeInsideFile,
@@ -129,7 +131,58 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
         }
     };
 
-    checkNonEmptyImportPath = (node: ast.GrammarImport, accept: ValidationAcceptor): void => {
+    /**
+     * A diagnostic expectation has to say what to look for. The code cannot be checked here — it is
+     * the host's, and a Lanzer file only sees the host's grammar — so only its shape is.
+     */
+    checkDiagnosticExpectation = (node: ast.DiagnosticExpectation, accept: ValidationAcceptor): void => {
+        if (node.code === undefined && node.message === undefined) {
+            accept('error', `Say which ${node.severity} to expect: give a \`code\`, a \`message\`, or both.`, {
+                node,
+                property: 'severity'
+            });
+            return;
+        }
+        if (node.code !== undefined && node.code.trim().length === 0) {
+            accept('error', 'A diagnostic code must not be empty.', { node, property: 'code' });
+        }
+        if (node.message === undefined) {
+            return;
+        }
+        if (node.messageMode === 'matches') {
+            try {
+                new RegExp(node.message);
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                accept('error', `Invalid regular expression: ${reason}`, { node, property: 'message' });
+            }
+        } else if (node.message.length === 0) {
+            accept('warning', node.messageMode === 'contains'
+                ? 'Every message contains the empty string, so this check matches any message.'
+                : 'No diagnostic has an empty message, so this expectation can never be met.', {
+                node,
+                property: 'message'
+            });
+        }
+    };
+
+    /**
+     * A workspace with a file broken on purpose cannot be run: the program never gets past the
+     * language's own checks, so a `run` block beside a near-miss could only ever fail.
+     */
+    checkNoRunsBesideNearMisses = (node: ast.Campaign, accept: ValidationAcceptor): void => {
+        const nearMiss = node.files.find((file) => file.diagnostics.length > 0);
+        if (!nearMiss) {
+            return;
+        }
+        for (const run of node.runs) {
+            accept('error', `Campaign '${node.name}' cannot run a program: file '${nearMiss.name}' expects diagnostics, so the workspace is invalid on purpose.`, {
+                node: run
+            });
+        }
+    };
+
+    checkNonEmptyImportPath =(node: ast.GrammarImport, accept: ValidationAcceptor): void => {
         if (node.path.trim().length === 0) {
             accept('error', 'Grammar import paths must not be empty.', {
                 node,

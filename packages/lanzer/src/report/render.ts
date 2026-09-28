@@ -63,9 +63,10 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
         }
         // Where, not just how many. Capped because a badly broken file can produce hundreds, and
         // the report file has all of them.
-        const shown = report.documents.flatMap((document) =>
-            document.issues.map((issue) => ({ uri: document.uri, issue }))
-        );
+        const nearMissUris = new Set(report.nearMisses.map((file) => file.uri));
+        const shown = report.documents
+            .filter((document) => !nearMissUris.has(document.uri))
+            .flatMap((document) => document.issues.map((issue) => ({ uri: document.uri, issue })));
         for (const { uri, issue } of shown.slice(0, MAX_LISTED_DIAGNOSTICS)) {
             const at = issue.line !== undefined ? `:${issue.line}:${issue.character ?? 1}` : '';
             const code = issue.code ? `[${issue.code}] ` : '';
@@ -73,6 +74,18 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
         }
         if (shown.length > MAX_LISTED_DIAGNOSTICS) {
             lines.push(`    … ${shown.length - MAX_LISTED_DIAGNOSTICS} more (see the report file)`);
+        }
+    }
+    // Shown whether or not they matched: a passing near-miss is worth seeing too, since what it was
+    // rejected with is the point of generating it.
+    for (const file of report.nearMisses) {
+        const matched = file.missing.length === 0 && file.unexpected.length === 0;
+        lines.push(`  near-miss ${shortenUri(file.uri)}: ${matched ? 'rejected as expected' : 'not rejected as expected'}`);
+        for (const expected of file.expected) lines.push(`    expected: ${expected}`);
+        for (const missing of file.missing) lines.push(`    missing: ${missing}`);
+        for (const issue of file.unexpected) {
+            const at = issue.line !== undefined ? `:${issue.line}:${issue.character ?? 1}` : '';
+            lines.push(`    unexpected${at}: ${issue.code ? `[${issue.code}] ` : ''}${issue.message}`);
         }
     }
     for (const issue of report.campaignIssues) lines.push(`    - ${issue}`);

@@ -174,6 +174,38 @@ starts from — a generated file, or a `support` file the campaign provides:
 - The agent sees the expected output. Pair it with requirements that force the computation (e.g.
   `require FunctionDeclaration[name="factorial"]`) so printing the literal answer is not enough.
 
+## Near-miss files: expected diagnostics
+
+To test a language's validator rather than its happy path, a `file` block can say which
+diagnostics the language must reject it with. The agent then writes a program that is almost right
+and wrong in exactly that way:
+
+```lanzer
+    file mainFile at "src/main.lox" generates LoxProgram {
+        require VariableDeclaration
+        expect error code "LOX_TYPE_NOT_ASSIGNABLE"
+        expect error message matches "^Duplicate identifier '\\w+'"   // the name is the agent's choice
+        expect error code "DUP" message contains "declared twice"      // both, on the same diagnostic
+        expect warning message contains "unused"
+        expect info code "STYLE_HINT"
+    }
+```
+
+- Severity is `error`, `warning` or `info`. Each line needs a `code`, a `message`, or both; given
+  both, one diagnostic must carry the code **and** match the message.
+- `message` compares like `expect output`: exact with no mode, `contains`, or `matches` (a regex;
+  backslashes doubled). Use a regex when the message names something the agent picks.
+- Each line must be met by at least one diagnostic. Any **error** no line accounts for fails the
+  file — a near-miss is wrong in one way, not two. Unasked warnings and infos are ignored.
+- Parse errors are errors like any other: expect the host's parser-error code or message.
+- Codes are the host's own. Lanzer cannot list them while you write the campaign, so `validate`
+  checks only the shape; a host that lists its codes (Lox does) rejects an unknown one before a
+  generation run starts.
+- Requirements still apply to a near-miss file, and every other generated file must stay valid.
+- A campaign with a near-miss file cannot have `run` blocks: its workspace is invalid on purpose.
+- A mismatch is reported at the `diagnostics` stage, listing what was expected, what was missing,
+  and which errors came out instead.
+
 ## Authoring rules
 
 - Always include the `import` line — selectors will not link otherwise.
@@ -262,7 +294,8 @@ so with `execute`, or with `--allow-all` on the host CLI.
 During generation the agent can call Lanzer's own tools — `validate` (the same campaign check that
 grades the run) and `grammar_reference` — served in-process. `generate` reports the outcome per
 campaign and accepts `--report <path>` for a JSON dump; a failure names the stage it failed at
-(`launch`, `session`, `turn`, `no_output`, `syntax`, `semantics`, `requirements`, `scope`).
+(`launch`, `session`, `turn`, `no_output`, `syntax`, `semantics`, `diagnostics`, `requirements`,
+`behaviour`, `scope`).
 
 After generation, Lanzer runs each requirement's selector against the generated file's AST. Failures are reported as `Required selector did not match any node ...`, `Selector matched K of required N ...`, or `Forbidden selector matched K node(s) ...`.
 
@@ -291,3 +324,5 @@ is the same for any host language):
 - `references/fizzbuzz.lanzer` — a `run` block using every kind of `expect`
 - `packages/lanzer-lox/examples/geometry.lanzer` — a `run` from a provided test driver (a support
   file that calls the generated code), so the check is on return values, not chosen prints
+- `packages/lanzer-lox/examples/near-miss.lanzer` — a near-miss file that must fail with one
+  expected error

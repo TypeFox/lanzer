@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
 import type { LanzerGenerationJob, LanzerGenerationRun } from './jobs.js';
-import type { LanzerRequirementSpec } from './model.js';
+import { describeDiagnosticExpectation } from '../validations/diagnostic-validations.js';
+import type { LanzerDiagnosticExpectation, LanzerRequirementSpec } from './model.js';
 import { formatLanzerRequirement } from './jobs.js';
 
 export interface LanzerAgentTaskPayload {
@@ -264,6 +265,7 @@ function renderPrompt(
         }
     }
     appendCampaignWideRequirements(lines, campaignWide);
+    appendExpectedDiagnostics(lines, job.diagnostics, '');
     appendBehaviourChecks(lines, job.runs);
 
     lines.push('Generate a concrete file that fits the host language and the surrounding workspace.');
@@ -370,6 +372,7 @@ function renderCampaignPrompt(
                 lines.push(`  - ${formatLanzerRequirementForJob(requirement, job.fileAlias)}`);
             }
         }
+        appendExpectedDiagnostics(lines, job.diagnostics, '  ');
     }
     appendCampaignWideRequirements(lines, splitCampaignRequirements(firstJob).campaignWide);
     appendBehaviourChecks(lines, firstJob.runs);
@@ -422,6 +425,24 @@ function appendCampaignWideRequirements(lines: string[], requirements: LanzerReq
     for (const requirement of requirements) {
         lines.push(`- ${formatLanzerRequirement(requirement)}`);
     }
+}
+
+/**
+ * What a near-miss file must be rejected with.
+ *
+ * An agent's every instinct is to write valid code, so the contract is stated as the goal rather
+ * than as a list of findings: one deliberate mistake, the file otherwise correct, and no second
+ * error to muddy what the file tests.
+ */
+function appendExpectedDiagnostics(lines: string[], diagnostics: LanzerDiagnosticExpectation[], indent: string): void {
+    if (diagnostics.length === 0) {
+        return;
+    }
+    lines.push(`${indent}expected diagnostics — this file is a deliberate near-miss. The language MUST report:`);
+    for (const expectation of diagnostics) {
+        lines.push(`${indent}- ${describeDiagnosticExpectation(expectation)}`);
+    }
+    lines.push(`${indent}Introduce exactly the mistake that causes these and nothing else: the file must still satisfy its requirements, be otherwise correct, and produce no other error. Every other generated file must stay valid. Validation treats these diagnostics as the goal: do not fix them.`);
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { LanzerToolCallRecord } from '../acp/tool-host.js';
 import type { LanzerAgentUsage, LanzerAttemptRecord } from '../acp/run.js';
-import type { LanzerDocumentIssue } from '../services/types.js';
+import type { LanzerDiagnosticsOutcome, LanzerDocumentIssue } from '../services/types.js';
 
 /**
  * The ordered stages a generation run passes through.
@@ -18,6 +18,7 @@ export const LANZER_RUN_STAGES = [
     'no_output',
     'syntax',
     'semantics',
+    'diagnostics',
     'requirements',
     'behaviour',
     'scope'
@@ -33,6 +34,7 @@ export const LANZER_RUN_STAGE_DESCRIPTIONS: Readonly<Record<LanzerRunStage, stri
     no_output: 'a required file was never written',
     syntax: 'a generated file does not parse',
     semantics: 'a generated file parses but the language rejects it',
+    diagnostics: 'a near-miss file is not rejected the way the campaign expects',
     requirements: 'the files are valid but the campaign requirements are unmet',
     behaviour: 'the program runs, but not the way the campaign expects',
     scope: 'files outside the declared set were written or modified'
@@ -46,7 +48,10 @@ export interface LanzerReportFile {
 
 export interface LanzerIssueTally {
     total: number;
-    /** Occurrences per diagnostic code. Uncoded issues are counted under `(uncoded)`. */
+    /**
+     * Occurrences per diagnostic code. Uncoded issues are counted under `(uncoded)`. A near-miss
+     * file's expected diagnostics are left out: they are the file working, not a failure.
+     */
     byCode: Record<string, number>;
     byKind: Record<string, number>;
 }
@@ -78,6 +83,8 @@ export interface LanzerRunReport {
      * counted them could tell you a run failed with three `LOX_TYPE_NOT_ASSIGNABLE` and not where.
      */
     documents: LanzerReportDocument[];
+    /** Each near-miss file: what it had to be rejected with, what was missing, what came out instead. */
+    nearMisses: LanzerDiagnosticsOutcome[];
     /** Requirement and workspace failures, which are Lanzer's own rather than the language's. */
     campaignIssues: string[];
     workspaceIssues: string[];

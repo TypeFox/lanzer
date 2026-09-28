@@ -39,6 +39,14 @@ const LOX_PARSER_ERROR = 'LOX_PARSER_ERROR';
 /** Anything the validator emits that no pattern above recognises. */
 const LOX_UNCLASSIFIED = 'LOX_UNCLASSIFIED';
 
+/** Every code {@link withLoxDiagnosticCode} can assign, for campaigns that expect one. */
+export const LOX_DIAGNOSTIC_CODES: readonly string[] = [
+    ...LOX_CODE_PATTERNS.map((entry) => entry.code),
+    LOX_LEXER_ERROR,
+    LOX_PARSER_ERROR,
+    LOX_UNCLASSIFIED
+];
+
 /**
  * Attach a code to one issue, leaving any the host already supplied untouched.
  *

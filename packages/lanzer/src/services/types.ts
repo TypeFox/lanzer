@@ -46,6 +46,31 @@ export interface LanzerDocumentIssue {
 export interface LanzerDocumentResult {
     uri: string;
     issues: LanzerDocumentIssue[];
+    /**
+     * Set for a near-miss file — one declaring the diagnostics it must be rejected with. Its issues
+     * are then everything it produced, judged by {@link LanzerCampaignValidationResult.diagnostics}
+     * rather than required to be empty.
+     */
+    expectsDiagnostics?: boolean;
+}
+
+/** How one near-miss file compared with the diagnostics it had to produce. */
+export interface LanzerDiagnosticsOutcome {
+    fileAlias: string;
+    uri: string;
+    /** Every expectation of the file, in words. */
+    expected: string[];
+    /** The expectations no diagnostic met. */
+    missing: string[];
+    /** Errors no expectation accounts for: the file is wrong in a way nobody asked for. */
+    unexpected: LanzerDocumentIssue[];
+}
+
+export interface LanzerDiagnosticsValidationResult {
+    ok: boolean;
+    files: LanzerDiagnosticsOutcome[];
+    /** Every file's mismatches, flattened, for fix prompts and the `validate` tool. */
+    issues: string[];
 }
 
 export interface LanzerWorkspaceValidationResult {
@@ -63,6 +88,8 @@ export interface LanzerCampaignValidationResult {
     documents: LanzerDocumentResult[];
     workspace?: LanzerWorkspaceValidationResult;
     campaign?: LanzerCampaignCheckValidationResult;
+    /** How the near-miss files compared with their expected diagnostics. Absent when there are none. */
+    diagnostics?: LanzerDiagnosticsValidationResult;
     /**
      * What running the campaign's entry files produced, checked against its `run` blocks.
      *
@@ -177,6 +204,12 @@ export interface LanzerService<
      * its language could reach outside the process.
      */
     execute?(request: LanzerExecutionRequest): Promise<LanzerExecutionResult>;
+    /**
+     * Every diagnostic code the host reports. Optional: a campaign's expected codes are the host's
+     * own, and neither LSP nor Langium can enumerate them, so only the host knows. When given, a
+     * campaign expecting a code outside the list is rejected before an agent is started.
+     */
+    diagnosticCodes?(): Promise<readonly string[]>;
 }
 
 export interface LanzerCampaignRunRequest {

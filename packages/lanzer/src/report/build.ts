@@ -55,7 +55,11 @@ async function describeFiles(jobs: LanzerGenerationJob[]): Promise<LanzerReportF
 
 function tallyIssues(validation: LanzerCampaignValidationResult | undefined): LanzerIssueTally {
     const tally: LanzerIssueTally = { total: 0, byCode: {}, byKind: {} };
-    for (const document of validation?.documents ?? []) {
+    const counted = [
+        ...(validation?.documents ?? []).filter((document) => !document.expectsDiagnostics),
+        ...(validation?.diagnostics?.files ?? []).map((file) => ({ issues: file.unexpected }))
+    ];
+    for (const document of counted) {
         for (const issue of document.issues) {
             tally.total += 1;
             const code = issue.code ?? UNCODED;
@@ -87,12 +91,19 @@ function determineFailedStage(
     if (files.some((file) => !file.exists) || run.staleFiles.length > 0) {
         return 'no_output';
     }
-    const issues = (validation?.documents ?? []).flatMap((document) => document.issues);
+    // A near-miss file's diagnostics are judged at `diagnostics`, not here: a parse error it was
+    // asked for is not a syntax failure.
+    const issues = (validation?.documents ?? [])
+        .filter((document) => !document.expectsDiagnostics)
+        .flatMap((document) => document.issues);
     if (issues.some((issue) => issue.kind === 'lexer-error' || issue.kind === 'parser-error')) {
         return 'syntax';
     }
     if (issues.some((issue) => issue.kind === 'diagnostic')) {
         return 'semantics';
+    }
+    if ((validation?.diagnostics?.issues.length ?? 0) > 0) {
+        return 'diagnostics';
     }
     if ((validation?.campaign?.issues.length ?? 0) > 0) {
         return 'requirements';
@@ -137,6 +148,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
             uri: document.uri,
             issues: document.issues
         })),
+        nearMisses: validation?.diagnostics?.files ?? [],
         campaignIssues: validation?.campaign?.issues ?? [],
         behaviourIssues: validation?.behaviour?.issues ?? [],
         workspaceIssues: [...(validation?.workspace?.issues ?? []), ...fileSetIssues],

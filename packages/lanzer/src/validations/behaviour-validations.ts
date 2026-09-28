@@ -110,7 +110,8 @@ function checkExpectation(alias: string, expectation: LanzerExpectation, output:
     return `Run of '${alias}': output ${wanted}, but was ${quote(output)}`;
 }
 
-function outputMatches(mode: LanzerOutputMatchMode, expected: string, output: string): boolean {
+/** Also how a diagnostic's message is compared, so both checks read the same way. */
+export function outputMatches(mode: LanzerOutputMatchMode, expected: string, output: string): boolean {
     const actual = normaliseLineEndings(output);
     switch (mode) {
         case 'exact':

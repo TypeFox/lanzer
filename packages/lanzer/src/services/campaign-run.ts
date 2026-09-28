@@ -14,6 +14,7 @@ import {
 import { formatLanzerIssue } from '../acp/issues.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
+import { findUnknownDiagnosticCodes } from '../validations/diagnostic-validations.js';
 import type { LanzerCampaignValidationResult } from './types.js';
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -82,6 +83,14 @@ async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: 
     const jobs = buildLanzerGenerationJobs(resolved);
     if (jobs.length === 0) {
         throw new Error('Campaign produced no generation jobs.');
+    }
+    const knownCodes = await service.diagnosticCodes?.();
+    const unknownCodes = knownCodes ? findUnknownDiagnosticCodes(resolved.campaign, knownCodes) : [];
+    if (unknownCodes.length > 0 && knownCodes) {
+        throw new Error(
+            `Campaign ${resolved.campaign.name} expects diagnostic code(s) the host never reports: ${unknownCodes.join(', ')}. ` +
+            `Known codes: ${knownCodes.join(', ')}.`
+        );
     }
     return {
         jobs,
@@ -158,10 +167,14 @@ export async function runLanzerCampaign(
         lastVerdict = result;
         const issues: string[] = [];
         for (const doc of result.documents) {
+            // A near-miss file's diagnostics are its goal, not its faults: only the mismatches
+            // below are for the agent to fix.
+            if (doc.expectsDiagnostics) continue;
             for (const issue of doc.issues) {
                 issues.push(formatLanzerIssue({ uri: doc.uri, ...issue }));
             }
         }
+        for (const issue of result.diagnostics?.issues ?? []) issues.push(issue);
         for (const issue of result.campaign?.issues ?? []) issues.push(issue);
         for (const issue of result.behaviour?.issues ?? []) issues.push(issue);
         for (const issue of result.workspace?.issues ?? []) issues.push(issue);
