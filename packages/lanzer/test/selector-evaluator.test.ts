@@ -31,6 +31,10 @@ describe('selector evaluation', () => {
         expect(await count('Fn')).toBe(3);
     });
 
+    test('a union rule matches every member', async () => {
+        expect(await count('Stmt')).toBe(5);
+    });
+
     test('a leading > matches only direct children of the root', async () => {
         expect(await count('> Fn')).toBe(2);
     });

@@ -124,7 +124,7 @@ export class LanzerSelectorValidator {
         const astType = astTypeOfRule(part.rule?.ref);
         if (astType === UNRESOLVED_AST_TYPE) return;
 
-        if (!context.reflection.getAllTypes().includes(astType)) {
+        if (!isKnownType(astType, context.reflection)) {
             accept('error', `Unknown AST type '${astType}'.`, { node: part, property: 'rule' });
             return;
         }
@@ -324,4 +324,22 @@ function findPropertyInSubtypes(
         // ignore unknown types
     }
     return undefined;
+}
+
+/**
+ * Whether the reflection knows a type, including a union.
+ *
+ * `getAllTypes()` lists only types with their own metadata; a union rule (`Stmt: Call | Ret`) or a
+ * union alias (`type NamedElement = …`) is known only through its members — `isSubtype(Call,
+ * Stmt)` holds and the evaluator matches it — so a union with members is a type to select by.
+ */
+function isKnownType(type: string, reflection: AstReflection): boolean {
+    if (reflection.getAllTypes().includes(type)) {
+        return true;
+    }
+    try {
+        return reflection.getAllSubTypes(type).length > 0;
+    } catch {
+        return false;
+    }
 }
