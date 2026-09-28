@@ -197,3 +197,18 @@ describe('the DSL skill', () => {
         expect(run.report?.ok).toBe(true);
     });
 });
+
+describe('Lanzer tools across sessions', () => {
+    test('a retry session can still call the tools the first session used', async () => {
+        const { log, run } = await runFakeAgent([[{ tool: 'validate' }], [{ tool: 'validate' }]], {
+            maxAttempts: undefined,
+            fixIterations: 0,
+            retryIterations: 2,
+            validate: async () => ({ ok: false, issues: ['still failing'] }),
+            toolkit: { validate: async () => ({ ok: false, documents: [] }) }
+        });
+        expect(log.map((entry) => [entry.session, entry.ok, entry.error])).toEqual([[1, true, undefined], [2, true, undefined]]);
+        expect(log[1].text).toContain('INVALID');
+        expect(run.toolCalls).toHaveLength(2);
+    });
+});

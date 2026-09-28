@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk';
@@ -102,7 +102,6 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
 
     const calls: LanzerToolCallRecord[] = [];
     const token = randomBytes(24).toString('hex');
-    const mcp = new McpServer({ name: 'lanzer', version: '0.0.1' });
 
     /** Time a call, record what it found, and hand the agent the rendered text. */
     const record = async (
@@ -138,61 +137,81 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
         }
     };
 
-    const validate = toolkit.validate;
-    if (validate) {
-        mcp.registerTool(
-            'validate',
-            {
-                title: 'Validate generated files',
-                description:
-                    'Check the files generated for this campaign: parse errors, language diagnostics, ' +
-                    'and whether the campaign requirements are satisfied. This is the same check Lanzer ' +
-                    'runs at the end, so a VALID result here means the run will pass. Call it after ' +
-                    'writing files, and again after each correction.',
-                inputSchema: {}
-            },
-            async () =>
-                record('validate', async () => {
-                    const result = await validate();
-                    const { codes, issueCount } = collectCodes(result);
-                    return { text: renderValidation(result), ok: result.ok, codes, issueCount };
-                })
-        );
-    }
+    /**
+     * A server with the toolkit's tools registered. One is made per request: the tools keep no state
+     * between calls, and a server bound to a single stateful transport refuses the `initialize` of
+     * every connection after the first — which is what each retry session, and any agent that
+     * reconnects, sends.
+     */
+    const buildServer = (): McpServer => {
+        const mcp = new McpServer({ name: 'lanzer', version: '0.0.1' });
+        const validate = toolkit.validate;
+        if (validate) {
+            mcp.registerTool(
+                'validate',
+                {
+                    title: 'Validate generated files',
+                    description:
+                        'Check the files generated for this campaign: parse errors, language diagnostics, ' +
+                        'and whether the campaign requirements are satisfied. This is the same check Lanzer ' +
+                        'runs at the end, so a VALID result here means the run will pass. Call it after ' +
+                        'writing files, and again after each correction.',
+                    inputSchema: {}
+                },
+                async () =>
+                    record('validate', async () => {
+                        const result = await validate();
+                        const { codes, issueCount } = collectCodes(result);
+                        return { text: renderValidation(result), ok: result.ok, codes, issueCount };
+                    })
+            );
+        }
 
-    const grammarReference = toolkit.grammarReference;
-    if (grammarReference) {
-        mcp.registerTool(
-            'grammar_reference',
-            {
-                title: 'Read the grammar reference',
-                description:
-                    'The full grammar of the target language in BNF form. Use it to check what syntax ' +
-                    'actually exists before writing code, rather than assuming.',
-                inputSchema: {}
-            },
-            async () =>
-                record('grammar_reference', async () => {
-                    const text = await grammarReference();
-                    return {
-                        text: text ?? 'No grammar reference is available for this campaign.',
-                        ok: text !== undefined
-                    };
-                })
-        );
-    }
-
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
-    await mcp.connect(transport);
+        const grammarReference = toolkit.grammarReference;
+        if (grammarReference) {
+            mcp.registerTool(
+                'grammar_reference',
+                {
+                    title: 'Read the grammar reference',
+                    description:
+                        'The full grammar of the target language in BNF form. Use it to check what syntax ' +
+                        'actually exists before writing code, rather than assuming.',
+                    inputSchema: {}
+                },
+                async () =>
+                    record('grammar_reference', async () => {
+                        const text = await grammarReference();
+                        return {
+                            text: text ?? 'No grammar reference is available for this campaign.',
+                            ok: text !== undefined
+                        };
+                    })
+            );
+        }
+        return mcp;
+    };
 
     const server: Server = createServer((req, res) => {
         if (req.headers.authorization !== `Bearer ${token}`) {
             res.writeHead(401).end();
             return;
         }
-        transport.handleRequest(req, res).catch(() => {
-            if (!res.headersSent) res.writeHead(500).end();
+        // Stateless: no session to stream server-initiated messages on, so only POST is served.
+        if (req.method !== 'POST') {
+            res.writeHead(405, { Allow: 'POST' }).end();
+            return;
+        }
+        const mcp = buildServer();
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        res.on('close', () => {
+            void transport.close();
+            void mcp.close();
         });
+        mcp.connect(transport)
+            .then(() => transport.handleRequest(req, res))
+            .catch(() => {
+                if (!res.headersSent) res.writeHead(500).end();
+            });
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -215,7 +234,7 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
         },
         calls: () => calls,
         close: async () => {
-            await mcp.close().catch(() => undefined);
+            server.closeAllConnections();
             await new Promise<void>((resolve) => server.close(() => resolve()));
         }
     };
