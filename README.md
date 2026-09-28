@@ -292,7 +292,7 @@ node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer --repo
 ```
 
 A failure names **the stage it failed at**, walking the pipeline in order — `launch`, `session`,
-`turn`, `no_output`, `syntax`, `semantics`, `requirements`, `behaviour`, `scope` — so the report points at the
+`turn`, `no_output`, `syntax`, `semantics`, `diagnostics`, `requirements`, `behaviour`, `scope` — so the report points at the
 earliest cause rather than the loudest symptom. A file that never parsed also fails its
 requirements, and saying `requirements` for it would send you to fix the wrong thing:
 
@@ -304,8 +304,27 @@ requirements, and saying `requirements` for it would send you to fix the wrong t
     - Forbidden selector matched 1 node(s) in mainFile: FunctionDeclaration
 ```
 
+A [near-miss file](#checking-diagnostics-near-miss-files) rejected exactly as its expectations say
+is a success: the run is `ok`, and its intended diagnostics are left out of the per-code counts, so
+they never read as failures. The summary still lists what it was rejected with. A file rejected any
+other way fails at `diagnostics`, listing what was expected, what never came, and which errors came
+instead:
+
+```text
+✗ typeMismatchLox — a near-miss file is not rejected the way the campaign expects
+  failed at diagnostics — a near-miss file is not rejected the way the campaign expects
+  3 attempt(s), 18.4s, stopped: end_turn
+  1 diagnostic(s):
+      1  LOX_ARITY_MISMATCH
+  near-miss src/main.lox: not rejected as expected
+    expected: an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching /^Type '\w+' is not assignable to type '\w+'/
+    missing: an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching /^Type '\w+' is not assignable to type '\w+'/
+    unexpected:2:19: [LOX_ARITY_MISMATCH] Expected 2 argument(s) but got 1.
+```
+
 The JSON adds per-run token/cost accounting, every tool call with timings, and diagnostics counted
-by code — so a suite run answers "how many succeeded, and where did the rest fail" directly.
+by code — so a suite run answers "how many succeeded, and where did the rest fail" directly. Its
+`nearMisses` field holds the same expected, missing and unexpected lists for each near-miss file.
 
 ### 2. Library fast path
 
