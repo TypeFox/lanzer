@@ -13,10 +13,10 @@ export function fixture(name: string): string {
     return fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
 }
 
-function createMiniServices() {
+function createFixtureServices(name = 'mini') {
     return createServicesForGrammar({
-        grammar: readFileSync(fixture('mini.langium'), 'utf8'),
-        languageMetaData: { languageId: 'mini', fileExtensions: ['.mini'], caseInsensitive: false, mode: 'development' }
+        grammar: readFileSync(fixture(`${name}.langium`), 'utf8'),
+        languageMetaData: { languageId: name, fileExtensions: [`.${name}`], caseInsensitive: false, mode: 'development' }
     });
 }
 
@@ -26,13 +26,13 @@ function createMiniServices() {
  * Interpreting the grammar rather than generating a parser keeps the tests free of build output:
  * the grammar the campaign imports is the very grammar the parsed programs come from.
  */
-export async function parseMini(text: string): Promise<{
+export async function parseMini(text: string, grammarName = 'mini'): Promise<{
     root: AstNode;
     reflection: AstReflection;
     grammar: GrammarAST.Grammar;
     parserErrors: number;
 }> {
-    const services = await createMiniServices();
+    const services = await createFixtureServices(grammarName);
     const document = await parseHelper(services)(text);
     return {
         root: document.parseResult.value,
@@ -81,7 +81,7 @@ export async function parseMiniDocument(
     path: string,
     campaign: LanzerCampaignSpec
 ): Promise<{ document: LangiumDocument; reflection: AstReflection }> {
-    const services = await createMiniServices();
+    const services = await createFixtureServices();
     const base = resolve(campaign.baseDir ?? '', campaign.workspaceRoot ?? '');
     const document = await parseHelper(services)(text, { documentUri: URI.file(resolve(base, path)).toString() });
     return { document, reflection: services.shared.AstReflection };

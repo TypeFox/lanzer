@@ -1,4 +1,5 @@
 import { GrammarAST } from 'langium';
+import { actionTypeName, declaredTypeOfRule, slotTypeOfRule } from './ast-type.js';
 
 /**
  * Containment graph derived from a parsed host grammar.
@@ -60,13 +61,20 @@ function registerRule(
         return;
     }
     if (rule.definition && ruleType) {
-        walkElement(rule.definition, ruleType, directChildren, knownTypes, new Set());
+        walkElement(rule.definition, ruleType, declaredTypeOfRule(rule), directChildren, knownTypes, new Set());
     }
 }
 
+/**
+ * Record the containment edges of one grammar element.
+ *
+ * `currentType` is the node the element's assignments go to. `bodyType` is everything the rule that
+ * owns this body can produce — what `current` may be when an action wraps it.
+ */
 function walkElement(
     element: GrammarAST.AbstractElement | undefined,
     currentType: string,
+    bodyType: string,
     directChildren: Map<string, Set<string>>,
     knownTypes: Set<string>,
     visitedFragments: Set<string>
@@ -76,16 +84,12 @@ function walkElement(
     }
 
     if (GrammarAST.isAssignment(element)) {
-        walkAssignment(element, currentType, directChildren, knownTypes, visitedFragments);
+        walkAssignment(element, currentType, bodyType, directChildren, knownTypes, visitedFragments);
         return;
     }
 
     if (GrammarAST.isAction(element)) {
-        const inferred = element.inferredType?.name;
-        if (inferred) {
-            addChild(directChildren, currentType, inferred);
-            knownTypes.add(inferred);
-        }
+        applyAction(element, bodyType, directChildren, knownTypes);
         return;
     }
 
@@ -96,7 +100,7 @@ function walkElement(
             if (target.fragment) {
                 if (!visitedFragments.has(target.name)) {
                     visitedFragments.add(target.name);
-                    walkElement(target.definition, currentType, directChildren, knownTypes, visitedFragments);
+                    walkElement(target.definition, currentType, bodyType, directChildren, knownTypes, visitedFragments);
                     visitedFragments.delete(target.name);
                 }
             } else {
@@ -107,7 +111,7 @@ function walkElement(
                 // relation is subtyping, and reachability checks it through the reflection.
                 if (!visitedFragments.has(target.name)) {
                     visitedFragments.add(target.name);
-                    walkElement(target.definition, currentType, directChildren, knownTypes, visitedFragments);
+                    walkElement(target.definition, currentType, declaredTypeOfRule(target), directChildren, knownTypes, visitedFragments);
                     visitedFragments.delete(target.name);
                 }
             }
@@ -118,20 +122,19 @@ function walkElement(
     if (GrammarAST.isGroup(element) || GrammarAST.isUnorderedGroup(element)) {
         let typeInScope = currentType;
         for (const child of element.elements) {
-            if (GrammarAST.isAction(child) && child.inferredType?.name) {
-                addChild(directChildren, typeInScope, child.inferredType.name);
-                knownTypes.add(child.inferredType.name);
-                typeInScope = child.inferredType.name;
+            if (GrammarAST.isAction(child)) {
+                // Everything after an action in the same group is assigned to the node it created.
+                typeInScope = applyAction(child, bodyType, directChildren, knownTypes) ?? typeInScope;
                 continue;
             }
-            walkElement(child, typeInScope, directChildren, knownTypes, visitedFragments);
+            walkElement(child, typeInScope, bodyType, directChildren, knownTypes, visitedFragments);
         }
         return;
     }
 
     if (GrammarAST.isAlternatives(element)) {
         for (const child of element.elements) {
-            walkElement(child, currentType, directChildren, knownTypes, visitedFragments);
+            walkElement(child, currentType, bodyType, directChildren, knownTypes, visitedFragments);
         }
         return;
     }
@@ -140,47 +143,87 @@ function walkElement(
 function walkAssignment(
     assignment: GrammarAST.Assignment,
     currentType: string,
+    bodyType: string,
     directChildren: Map<string, Set<string>>,
     knownTypes: Set<string>,
     visitedFragments: Set<string>
 ): void {
-    const terminal = assignment.terminal;
-    if (!terminal) {
+    walkAssignedTerminal(assignment.terminal, currentType, bodyType, directChildren, knownTypes, visitedFragments);
+}
+
+/**
+ * Record what an assignment's right-hand side puts in the slot.
+ *
+ * Every rule call in it is assigned, including each branch of `body+=(Var | Fun)` — walking those
+ * branches as ordinary elements would read them as unassigned calls and record no slot at all.
+ */
+function walkAssignedTerminal(
+    terminal: GrammarAST.AbstractElement | undefined,
+    currentType: string,
+    bodyType: string,
+    directChildren: Map<string, Set<string>>,
+    knownTypes: Set<string>,
+    visitedFragments: Set<string>
+): void {
+    if (!terminal || GrammarAST.isCrossReference(terminal)) {
         return;
     }
-    if (GrammarAST.isCrossReference(terminal)) {
+    if (GrammarAST.isAlternatives(terminal)) {
+        for (const branch of terminal.elements) {
+            walkAssignedTerminal(branch, currentType, bodyType, directChildren, knownTypes, visitedFragments);
+        }
         return;
     }
     if (GrammarAST.isRuleCall(terminal)) {
         const target = terminal.rule?.ref;
-        if (!target) {
+        if (!target || !GrammarAST.isParserRule(target)) {
             return;
         }
-        if (GrammarAST.isParserRule(target)) {
-            if (target.fragment) {
-                if (!visitedFragments.has(target.name)) {
-                    visitedFragments.add(target.name);
-                    walkElement(target.definition, currentType, directChildren, knownTypes, visitedFragments);
-                    visitedFragments.delete(target.name);
-                }
-                return;
+        if (target.fragment) {
+            if (!visitedFragments.has(target.name)) {
+                visitedFragments.add(target.name);
+                walkElement(target.definition, currentType, bodyType, directChildren, knownTypes, visitedFragments);
+                visitedFragments.delete(target.name);
             }
-            const targetType = ruleProducedType(target);
-            if (targetType) {
-                addChild(directChildren, currentType, targetType);
-                knownTypes.add(targetType);
-            }
+            return;
+        }
+        const targetType = ruleProducedType(target);
+        if (targetType) {
+            addChild(directChildren, currentType, targetType);
+            knownTypes.add(targetType);
         }
         return;
     }
-    walkElement(terminal, currentType, directChildren, knownTypes, visitedFragments);
+    walkElement(terminal, currentType, bodyType, directChildren, knownTypes, visitedFragments);
 }
 
 function ruleProducedType(rule: GrammarAST.ParserRule): string | undefined {
-    if (rule.returnType?.ref?.name) {
-        return rule.returnType.ref.name;
+    return slotTypeOfRule(rule);
+}
+
+/**
+ * Record what an action creates, and return the type it creates.
+ *
+ * `{infer X}` creates the node as an `X` and contains nothing new. `{infer X.left=current}` creates
+ * an `X` that holds the node built so far — something the owning rule produces, `heldType` — so the
+ * edge runs from `X` to it, not the other way round, which would claim the operand contains the
+ * expression built around it.
+ */
+function applyAction(
+    action: GrammarAST.Action,
+    heldType: string,
+    directChildren: Map<string, Set<string>>,
+    knownTypes: Set<string>
+): string | undefined {
+    const created = actionTypeName(action);
+    if (!created) {
+        return undefined;
     }
-    return rule.name;
+    knownTypes.add(created);
+    if (action.feature) {
+        addChild(directChildren, created, heldType);
+    }
+    return created;
 }
 
 function addChild(map: Map<string, Set<string>>, parent: string, child: string): void {
