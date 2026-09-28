@@ -2,6 +2,7 @@ import type { LangiumDocument } from 'langium';
 import type { LangiumServices, LangiumSharedServices } from 'langium/lsp';
 import { diagnosticCode } from '../util/guards.js';
 import { validateBehaviour } from '../validations/behaviour-validations.js';
+import { findNearMissDocuments, validateDiagnostics } from '../validations/diagnostic-validations.js';
 import type {
     LanzerCampaignRunRequest,
     LanzerCampaignRunner,
@@ -32,11 +33,20 @@ export class DefaultLanzerCampaignRunner<
             validation: request.validate ?? true
         });
 
-        const results = documents.map((document) => this.collectDocumentResult(document));
+        const collected = documents.map((document) => this.collectDocumentResult(document));
+        // A near-miss file keeps every issue it produced: those are what its expectations are
+        // matched against, warnings included. Any other file must come out clean, by the host's
+        // measure of clean.
+        const nearMisses = request.campaign ? findNearMissDocuments(request.campaign, documents) : new Map();
+        const results = collected.map((result, index): LanzerDocumentResult => nearMisses.has(index)
+            ? { ...result, expectsDiagnostics: true }
+            : { ...result, issues: result.issues.filter((issue) => this.failsCleanFile(issue)) });
+        const diagnostics = request.campaign ? validateDiagnostics(request.campaign, documents, results) : undefined;
         const workspace = await lanzer.validateWorkspace(request, documents);
         const campaign = await lanzer.validateCampaignResult(request, documents);
         const valid =
-            results.every((result) => result.issues.length === 0) &&
+            results.every((result) => result.expectsDiagnostics || result.issues.length === 0) &&
+            (diagnostics?.ok ?? true) &&
             (workspace?.ok ?? true) &&
             (campaign?.ok ?? true);
 
@@ -51,8 +61,18 @@ export class DefaultLanzerCampaignRunner<
             documents: results,
             workspace,
             campaign,
+            ...(diagnostics ? { diagnostics } : {}),
             ...(behaviour ? { behaviour } : {})
         };
+    }
+
+    /**
+     * Whether an issue on an ordinary file makes it unacceptable. Every issue does by default; a
+     * host that tolerates warnings in generated code narrows this rather than dropping them in
+     * {@link collectDocumentResult}, which would hide them from near-miss files expecting one.
+     */
+    protected failsCleanFile(_issue: LanzerDocumentIssue): boolean {
+        return true;
     }
 
     protected collectDocumentResult(document: LangiumDocument): LanzerDocumentResult {

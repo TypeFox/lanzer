@@ -4,6 +4,7 @@ import type {
     Campaign,
     CampaignFile,
     CountRequirement,
+    DiagnosticExpectation,
     Expectation,
     FileSpec,
     ForbidRequirement,
@@ -21,6 +22,7 @@ import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
 import { asLiteral } from '../util/guards.js';
 import {
     LANZER_COMBINATORS,
+    LANZER_DIAGNOSTIC_SEVERITIES,
     LANZER_OUTPUT_MATCH_MODES,
     LANZER_PSEUDO_CLASS_KINDS,
     LANZER_VALUE_PREDICATE_OPS
@@ -29,6 +31,7 @@ import type {
     LanzerCampaignSpec,
     LanzerCountRequirementSpec,
     LanzerCrossRefPredicate,
+    LanzerDiagnosticExpectation,
     LanzerExpectation,
     LanzerFileSpec as LanzerRuntimeFileSpec,
     LanzerForbidRequirementSpec,
@@ -136,7 +139,24 @@ function mapFile(file: FileSpec): LanzerRuntimeFileSpec {
         rootRule: file.rootRule.ref?.name ?? file.rootRule.$refText,
         rootAstType: astTypeOfRule(file.rootRule.ref),
         description: file.description,
-        requirements: file.requirements.map((requirement) => mapRequirement(requirement))
+        requirements: file.requirements.map((requirement) => mapRequirement(requirement)),
+        diagnostics: file.diagnostics.map((expectation) => mapDiagnosticExpectation(expectation))
+    };
+}
+
+function mapDiagnosticExpectation(expectation: DiagnosticExpectation): LanzerDiagnosticExpectation {
+    return {
+        severity: asLiteral(expectation.severity, LANZER_DIAGNOSTIC_SEVERITIES) ?? 'error',
+        ...(expectation.code !== undefined ? { code: expectation.code } : {}),
+        ...(expectation.message !== undefined
+            ? {
+                message: {
+                    // No mode keyword is an exact comparison, as for output checks.
+                    mode: asLiteral(expectation.messageMode, LANZER_OUTPUT_MATCH_MODES) ?? 'exact',
+                    value: expectation.message
+                }
+            }
+            : {})
     };
 }
 

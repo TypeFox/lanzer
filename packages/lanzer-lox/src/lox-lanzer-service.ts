@@ -8,8 +8,9 @@ import {
     DefaultLanzerCampaignRunner,
     DefaultLanzerService
 } from 'lanzer';
-import { withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
+import { LOX_DIAGNOSTIC_CODES, withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
 import type {
+    LanzerDocumentIssue,
     LanzerDocumentResult,
     LanzerDslSkillReference,
     LanzerExecutionRequest,
@@ -129,6 +130,11 @@ export class LoxLanzerService extends DefaultLanzerService {
      * classes, top-level variables) come first, then the entry's statements. The other files'
      * remaining statements are not run; only the entry is the program.
      */
+    /** The codes {@link withLoxDiagnosticCode} assigns — Lox itself sets none. */
+    async diagnosticCodes(): Promise<readonly string[]> {
+        return LOX_DIAGNOSTIC_CODES;
+    }
+
     async execute(request: LanzerExecutionRequest): Promise<LanzerExecutionResult> {
         const startedAt = Date.now();
         const entry = request.entry.document?.parseResult.value;
@@ -199,18 +205,18 @@ export class LoxLanzerService extends DefaultLanzerService {
 /**
  * Lox-specific campaign runner.
  *
- * Reports only hard errors (lexer/parser errors and severity-1 diagnostics). Warnings — such as
- * the "comparison always returns false" warning Lox emits for incompatible `==` operands — are
- * not surfaced as campaign failures, so the generator is not asked to "fix" intentional code.
+ * An ordinary file fails only on hard errors (lexer/parser errors and severity-1 diagnostics).
+ * Warnings — such as the "comparison always returns false" warning Lox emits for incompatible `==`
+ * operands — are not campaign failures, so the generator is not asked to "fix" intentional code.
+ * They are still collected, coded, for a near-miss file that expects one.
  */
 export class LoxLanzerCampaignRunner extends DefaultLanzerCampaignRunner {
     protected override collectDocumentResult(document: LangiumDocument): LanzerDocumentResult {
         const result = super.collectDocumentResult(document);
-        return {
-            ...result,
-            issues: result.issues
-                .filter(i => i.kind !== 'diagnostic' || (i.severity ?? 1) === 1)
-                .map(withLoxDiagnosticCode)
-        };
+        return { ...result, issues: result.issues.map(withLoxDiagnosticCode) };
+    }
+
+    protected override failsCleanFile(issue: LanzerDocumentIssue): boolean {
+        return issue.kind !== 'diagnostic' || (issue.severity ?? 1) === 1;
     }
 }

@@ -10,7 +10,7 @@
     },
     {
       "name": "keyword.control.lanzer",
-      "match": "\\b(description|generates|workspace|campaign|contains|matches|require|support|expect|forbid|import|output|file|runs|has|min|not|run|at|in)\\b"
+      "match": "\\b(description|generates|workspace|campaign|contains|matches|message|require|support|warning|expect|forbid|import|output|error|code|file|info|runs|has|min|not|run|at|in)\\b"
     },
     {
       "name": "string.quoted.double.lanzer",

@@ -55,7 +55,8 @@ export interface LanzerToolHost {
 function renderValidation(result: LanzerCampaignValidationResult): string {
     const lines: string[] = [result.ok ? 'VALID: every requirement is satisfied.' : 'INVALID:'];
     for (const document of result.documents) {
-        if (document.issues.length === 0) continue;
+        // A near-miss file's diagnostics are what it is for; its mismatches are listed below.
+        if (document.issues.length === 0 || document.expectsDiagnostics) continue;
         lines.push(`${document.uri}:`);
         for (const issue of document.issues) {
             const at = issue.line !== undefined ? `:${issue.line}:${issue.character ?? 1}` : '';
@@ -64,6 +65,7 @@ function renderValidation(result: LanzerCampaignValidationResult): string {
         }
     }
     for (const issue of result.workspace?.issues ?? []) lines.push(`  [workspace] ${issue}`);
+    for (const issue of result.diagnostics?.issues ?? []) lines.push(`  ${issue}`);
     for (const issue of result.campaign?.issues ?? []) lines.push(`  [requirement] ${issue}`);
     for (const issue of result.behaviour?.issues ?? []) lines.push(`  [behaviour] ${issue}`);
     return lines.join('\n');
@@ -73,12 +75,19 @@ function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]
     const codes: string[] = [];
     let issueCount = 0;
     for (const document of result.documents) {
+        if (document.expectsDiagnostics) continue;
         for (const issue of document.issues) {
             issueCount += 1;
             if (issue.code) codes.push(issue.code);
         }
     }
-    issueCount += (result.workspace?.issues.length ?? 0)
+    for (const file of result.diagnostics?.files ?? []) {
+        for (const issue of file.unexpected) {
+            if (issue.code) codes.push(issue.code);
+        }
+    }
+    issueCount += (result.diagnostics?.issues.length ?? 0)
+        + (result.workspace?.issues.length ?? 0)
         + (result.campaign?.issues.length ?? 0)
         + (result.behaviour?.issues.length ?? 0);
     return { codes, issueCount };
