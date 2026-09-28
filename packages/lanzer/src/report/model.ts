@@ -60,6 +60,11 @@ export interface LanzerIssueTally {
 export interface LanzerReportDocument {
     uri: string;
     issues: LanzerDocumentIssue[];
+    /**
+     * Set for a near-miss file: its issues are what it was meant to be rejected with, judged by
+     * {@link LanzerRunReport.nearMisses}, not failures in themselves.
+     */
+    expectsDiagnostics?: boolean;
 }
 
 export interface LanzerRunReport {

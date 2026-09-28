@@ -63,9 +63,8 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
         }
         // Where, not just how many. Capped because a badly broken file can produce hundreds, and
         // the report file has all of them.
-        const nearMissUris = new Set(report.nearMisses.map((file) => file.uri));
         const shown = report.documents
-            .filter((document) => !nearMissUris.has(document.uri))
+            .filter((document) => !document.expectsDiagnostics)
             .flatMap((document) => document.issues.map((issue) => ({ uri: document.uri, issue })));
         for (const { uri, issue } of shown.slice(0, MAX_LISTED_DIAGNOSTICS)) {
             const at = issue.line !== undefined ? `:${issue.line}:${issue.character ?? 1}` : '';

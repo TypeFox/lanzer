@@ -189,6 +189,8 @@ describe('reporting a near-miss', () => {
         });
         expect(report.ok).toBe(true);
         expect(report.issues.total).toBe(0);
+        // The intended diagnostic is still in the report, marked so it does not read as a failure.
+        expect(report.documents).toEqual([{ uri: 'file:///out/main.mini', issues: [expected], expectsDiagnostics: true }]);
         expect(renderLanzerRunSummary(report)).toContain('near-miss out/main.mini: rejected as expected');
     });
 
