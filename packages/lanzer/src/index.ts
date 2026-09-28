@@ -23,6 +23,7 @@ export * from './campaign/resolve.js';
 export * from './grammar/cache.js';
 export * from './grammar/parse.js';
 export * from './grammar/reachability.js';
+export * from './validations/behaviour-validations.js';
 export * from './validations/requirement-validations.js';
 export * from './validations/selector-evaluator.js';
 export * from './validations/selector-validation.js';

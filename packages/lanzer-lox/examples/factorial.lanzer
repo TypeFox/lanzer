@@ -1,0 +1,19 @@
+// Campaign with a behaviour check: the generated program is run, and what it prints is compared.
+// The requirements make the agent compute the factorials; the run block checks it got them right.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign factorialLox {
+    description "Print the factorials of 1 through 5, one per line, computed by a recursive function."
+    workspace "test/factorial"
+
+    file mainFile at "src/main.lox" generates LoxProgram {
+        require FunctionDeclaration[name="factorial"]
+        require FunctionDeclaration[name="factorial"] >> MemberCall[element->FunctionDeclaration[name="factorial"]]
+    }
+
+    run mainFile {
+        expect runs
+        expect output "1\n2\n6\n24\n120\n"
+        expect not output contains "nil"
+    }
+}

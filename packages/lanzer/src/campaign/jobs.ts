@@ -8,6 +8,7 @@ import type {
     LanzerPseudoClass,
     LanzerRequirementSpec,
     LanzerResolvedCampaign,
+    LanzerRunSpec,
     LanzerSelector,
     LanzerSelectorPart,
     LanzerSupportFileSpec,
@@ -32,6 +33,12 @@ export interface LanzerGenerationJob {
     campaignRequirements: LanzerRequirementSpec[];
     grammarImports: string[];
     grammarBaseDir?: string;
+    /** The campaign's `run` blocks, with each entry file's absolute path, for the prompt. */
+    runs: LanzerGenerationRun[];
+}
+
+export interface LanzerGenerationRun extends LanzerRunSpec {
+    absoluteEntryPath: string;
 }
 
 export interface LanzerGenerationSupportFile {
@@ -86,7 +93,14 @@ export function buildLanzerGenerationJobs(
             fileRequirements,
             campaignRequirements,
             grammarImports: campaign.imports,
-            grammarBaseDir: campaign.baseDir
+            grammarBaseDir: campaign.baseDir,
+            runs: campaign.runs.map((run) => ({
+                ...run,
+                absoluteEntryPath: resolvePath(
+                    campaign.files.find((candidate) => candidate.alias === run.fileAlias)?.path ?? run.fileAlias,
+                    workspaceRoot
+                )
+            }))
         };
     });
 }

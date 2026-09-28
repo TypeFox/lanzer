@@ -138,7 +138,8 @@ export class DefaultLanzerService<
             baseDir: job.grammarBaseDir,
             files: [],
             supportFiles: [],
-            requirements: []
+            requirements: [],
+            runs: []
         });
 
         if (grammars.length === 0) return undefined;

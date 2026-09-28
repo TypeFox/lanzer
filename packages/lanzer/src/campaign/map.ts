@@ -4,10 +4,12 @@ import type {
     Campaign,
     CampaignFile,
     CountRequirement,
+    Expectation,
     FileSpec,
     ForbidRequirement,
     Predicate,
     PseudoClass,
+    RunSpec,
     Selector,
     SelectorPart,
     SupportFileSpec,
@@ -18,6 +20,7 @@ import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
 import { asLiteral } from '../util/guards.js';
 import {
     LANZER_COMBINATORS,
+    LANZER_OUTPUT_MATCH_MODES,
     LANZER_PSEUDO_CLASS_KINDS,
     LANZER_VALUE_PREDICATE_OPS
 } from './model.js';
@@ -25,6 +28,7 @@ import type {
     LanzerCampaignSpec,
     LanzerCountRequirementSpec,
     LanzerCrossRefPredicate,
+    LanzerExpectation,
     LanzerFileSpec as LanzerRuntimeFileSpec,
     LanzerForbidRequirementSpec,
     LanzerPredicate,
@@ -32,6 +36,7 @@ import type {
     LanzerPseudoClass,
     LanzerRequirementSpec,
     LanzerResolvedCampaign,
+    LanzerRunSpec,
     LanzerSelector,
     LanzerSelectorPart,
     LanzerSupportFileSpec as LanzerRuntimeSupportFileSpec,
@@ -79,7 +84,8 @@ export function mapCampaign(
         imports: options.imports ?? [],
         files: campaign.files.map((file) => mapFile(file)),
         supportFiles: campaign.supportFiles.map((file) => mapSupportFile(file)),
-        requirements: campaign.requirements.map((requirement) => mapRequirement(requirement))
+        requirements: campaign.requirements.map((requirement) => mapRequirement(requirement)),
+        runs: campaign.runs.map((run) => mapRun(run))
     };
 }
 
@@ -234,6 +240,26 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
         property: predicate.property
     };
     return presence;
+}
+
+function mapRun(run: RunSpec): LanzerRunSpec {
+    return {
+        fileAlias: run.file.ref?.name ?? run.file.$refText,
+        expectations: run.expectations.map((expectation) => mapExpectation(expectation))
+    };
+}
+
+function mapExpectation(expectation: Expectation): LanzerExpectation {
+    if (expectation.runs) {
+        return { kind: 'runs' };
+    }
+    return {
+        kind: 'output',
+        // No mode keyword is an exact comparison; the grammar only admits the other two.
+        mode: asLiteral(expectation.mode, LANZER_OUTPUT_MATCH_MODES) ?? 'exact',
+        value: expectation.value ?? '',
+        negated: expectation.negated
+    };
 }
 
 function mapPseudoClass(pseudo: PseudoClass): LanzerPseudoClass {

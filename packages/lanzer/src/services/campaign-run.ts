@@ -163,6 +163,7 @@ export async function runLanzerCampaign(
             }
         }
         for (const issue of result.campaign?.issues ?? []) issues.push(issue);
+        for (const issue of result.behaviour?.issues ?? []) issues.push(issue);
         for (const issue of result.workspace?.issues ?? []) issues.push(issue);
         lastVerdictIssues = [...issues];
         return { ok: result.ok, issues };

@@ -65,6 +65,7 @@ function renderValidation(result: LanzerCampaignValidationResult): string {
     }
     for (const issue of result.workspace?.issues ?? []) lines.push(`  [workspace] ${issue}`);
     for (const issue of result.campaign?.issues ?? []) lines.push(`  [requirement] ${issue}`);
+    for (const issue of result.behaviour?.issues ?? []) lines.push(`  [behaviour] ${issue}`);
     return lines.join('\n');
 }
 
@@ -77,7 +78,9 @@ function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]
             if (issue.code) codes.push(issue.code);
         }
     }
-    issueCount += (result.workspace?.issues.length ?? 0) + (result.campaign?.issues.length ?? 0);
+    issueCount += (result.workspace?.issues.length ?? 0)
+        + (result.campaign?.issues.length ?? 0)
+        + (result.behaviour?.issues.length ?? 0);
     return { codes, issueCount };
 }
 

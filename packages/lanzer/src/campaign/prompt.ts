@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
-import type { LanzerGenerationJob } from './jobs.js';
+import type { LanzerGenerationJob, LanzerGenerationRun } from './jobs.js';
 import type { LanzerRequirementSpec } from './model.js';
 import { formatLanzerRequirement } from './jobs.js';
 
@@ -264,6 +264,7 @@ function renderPrompt(
         }
     }
     appendCampaignWideRequirements(lines, campaignWide);
+    appendBehaviourChecks(lines, job.runs);
 
     lines.push('Generate a concrete file that fits the host language and the surrounding workspace.');
     return lines.join('\n');
@@ -371,6 +372,7 @@ function renderCampaignPrompt(
         }
     }
     appendCampaignWideRequirements(lines, splitCampaignRequirements(firstJob).campaignWide);
+    appendBehaviourChecks(lines, firstJob.runs);
 
     lines.push('Generate a coherent concrete file set that fits the host language and the surrounding workspace.');
     return lines.join('\n');
@@ -420,6 +422,36 @@ function appendCampaignWideRequirements(lines: string[], requirements: LanzerReq
     for (const requirement of requirements) {
         lines.push(`- ${formatLanzerRequirement(requirement)}`);
     }
+}
+
+/**
+ * The programs Lanzer will run, and what each must print.
+ *
+ * Stated up front, with the expected output in full: the agent is graded on it, and a contract it
+ * can only discover by failing it costs a turn per clause. Every run must first finish on its own,
+ * so that is stated for each, whatever else it expects.
+ */
+function appendBehaviourChecks(lines: string[], runs: LanzerGenerationRun[]): void {
+    if (runs.length === 0) {
+        return;
+    }
+    lines.push('Behaviour checks — once the files are valid, Lanzer runs each program below and checks what it prints:');
+    for (const run of runs) {
+        lines.push(`- run ${run.fileAlias} (${run.absoluteEntryPath}):`);
+        lines.push('  - MUST run to completion, without a runtime error or timeout.');
+        for (const expectation of run.expectations) {
+            if (expectation.kind === 'output') {
+                const must = expectation.negated ? 'MUST NOT' : 'MUST';
+                const clause = {
+                    exact: `output ${must} be exactly ${JSON.stringify(expectation.value)} (trailing whitespace and blank lines are ignored)`,
+                    contains: `output ${must} contain ${JSON.stringify(expectation.value)}`,
+                    matches: `output ${must} match the regular expression /${expectation.value}/`
+                }[expectation.mode];
+                lines.push(`  - ${clause}.`);
+            }
+        }
+    }
+    lines.push('Produce this behaviour by computing it, as the description asks — not by printing the expected text directly.');
 }
 
 function formatLanzerRequirementForJob(

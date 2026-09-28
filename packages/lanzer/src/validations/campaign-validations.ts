@@ -21,7 +21,8 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
             CountRequirement: [this.checkPositiveCount, this.checkFileScopeInsideFile],
             SymbolRequirement: this.checkFileScopeInsideFile,
             ForbidRequirement: this.checkFileScopeInsideFile,
-            GrammarImport: this.checkNonEmptyImportPath
+            GrammarImport: this.checkNonEmptyImportPath,
+            Expectation: this.checkOutputExpectation
         };
     }
 
@@ -98,6 +99,34 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
             node,
             property: 'file'
         });
+    };
+
+    /**
+     * An output check must be one that can be evaluated: a `matches` pattern has to compile, and a
+     * check against the empty string says nothing — every output contains it, and exact empty
+     * output is better written as `expect runs` plus a `not output matches "."`.
+     */
+    checkOutputExpectation = (node: ast.Expectation, accept: ValidationAcceptor): void => {
+        if (node.runs || node.value === undefined) {
+            return;
+        }
+        if (node.mode === 'matches') {
+            try {
+                new RegExp(node.value);
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                accept('error', `Invalid regular expression: ${reason}`, { node, property: 'value' });
+            }
+            return;
+        }
+        if (node.value.length === 0) {
+            accept('warning', node.mode === 'contains'
+                ? 'Every output contains the empty string, so this check always passes.'
+                : 'An exact check against empty output only passes if the program prints nothing; say so with `expect not output matches "."`.', {
+                node,
+                property: 'value'
+            });
+        }
     };
 
     checkNonEmptyImportPath = (node: ast.GrammarImport, accept: ValidationAcceptor): void => {

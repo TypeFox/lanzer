@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import type { LangiumDocument } from 'langium';
+import { isOperationCancelled, type LangiumDocument } from 'langium';
+import { isLoxProgram } from 'langium-lox';
+import { runProgram } from 'langium-lox/interpreter';
 import {
     DefaultLanzerCampaignRunner,
     DefaultLanzerService
@@ -10,10 +12,14 @@ import { withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
 import type {
     LanzerDocumentResult,
     LanzerDslSkillReference,
+    LanzerExecutionResult,
     LanzerGenerationJob,
     LanzerGenerationPolicy,
     LanzerGenerationPolicyReferenceFile
 } from 'lanzer';
+
+/** How much output a run keeps; a program printing past this is cut off, not the process. */
+const LOX_OUTPUT_LIMIT = 64 * 1024;
 
 /**
  * Lox-specific Lanzer service.
@@ -101,6 +107,43 @@ export class LoxLanzerService extends DefaultLanzerService {
             }
         }
         return undefined;
+    }
+
+    /**
+     * Run a Lox program with the `langium-lox` interpreter, in-process, capturing what it prints.
+     *
+     * In-process is safe for Lox: the language has no file, network or process access, and the
+     * interpreter stops a program itself after five seconds (its cancellation surfaces here as a
+     * timeout). Output is captured the way the Lox CLI prints it — each value followed by a newline —
+     * and capped, so a program printing in a loop cannot exhaust memory before it times out.
+     *
+     * Lox has no imports, so the program is the entry file alone.
+     */
+    async execute(entry: LangiumDocument): Promise<LanzerExecutionResult> {
+        const startedAt = Date.now();
+        const program = entry.parseResult.value;
+        if (!isLoxProgram(program)) {
+            return { completed: false, output: '', error: 'the entry file is not a Lox program', timedOut: false, durationMs: 0 };
+        }
+        let output = '';
+        const log = (value: unknown): void => {
+            if (output.length < LOX_OUTPUT_LIMIT) {
+                output += `${String(value)}\n`;
+            }
+        };
+        try {
+            await runProgram(program, { log });
+            return { completed: true, output, timedOut: false, durationMs: Date.now() - startedAt };
+        } catch (error) {
+            const timedOut = isOperationCancelled(error);
+            return {
+                completed: false,
+                output,
+                ...(timedOut ? {} : { error: error instanceof Error ? error.message : String(error) }),
+                timedOut,
+                durationMs: Date.now() - startedAt
+            };
+        }
     }
 
     /**

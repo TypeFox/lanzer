@@ -76,6 +76,7 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
         }
     }
     for (const issue of report.campaignIssues) lines.push(`    - ${issue}`);
+    for (const issue of report.behaviourIssues) lines.push(`    - ${issue}`);
     for (const issue of report.workspaceIssues) lines.push(`    - ${issue}`);
     // Shown even on a passing run: extra files are not a failure, but they are worth knowing about,
     // and silently producing a dozen of them is exactly what a fuzzing corpus should surface.
