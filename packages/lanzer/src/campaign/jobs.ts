@@ -97,7 +97,8 @@ export function buildLanzerGenerationJobs(
             runs: campaign.runs.map((run) => ({
                 ...run,
                 absoluteEntryPath: resolvePath(
-                    campaign.files.find((candidate) => candidate.alias === run.fileAlias)?.path ?? run.fileAlias,
+                    [...campaign.files, ...campaign.supportFiles].find((candidate) => candidate.alias === run.entryAlias)?.path
+                        ?? run.entryAlias,
                     workspaceRoot
                 )
             }))

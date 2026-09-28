@@ -200,7 +200,15 @@ campaign factorialLox {
 }
 ```
 
-Once the files are valid, Lanzer runs each entry through the host language and checks every
+`run` names the file the program starts from — a generated file, or a `support` file the campaign
+provides, such as a fixed driver that calls the generated code and prints what it returns. The name
+is a reference: one that is not a declared file is a Lanzer error at `validate`. A support file used
+as an entry is protected: if the agent changes it, the run fails. The host is given the whole
+workspace along with the entry, so a program may span files: an interpreter runs the entry with the
+other files' definitions in scope, a compiled language builds the workspace and treats the entry as
+its main.
+
+Once the files are valid, Lanzer runs each program through the host language and checks every
 expectation; a miss fails the run at the `behaviour` stage, with the expected and actual output in
 the fix prompt and in the agent's `validate` tool. The agent sees the expected output up front, so
 pair it with requirements that make it compute rather than print the answer. A host runs programs
@@ -296,9 +304,11 @@ parts:
 **1. A service** ([`lox-lanzer-service.ts`](packages/lanzer-lox/src/lox-lanzer-service.ts)) — extend
 `DefaultLanzerService` and override `getGenerationPolicy` (your language's required/forbidden
 practices, reference files) and `dslSkill` (point at your DSL's agent skill). To support `run`
-blocks, also implement `execute(entry, documents)`: run the program from the entry document and
-return what it printed, whether it completed, and any error or timeout — bounding time and output,
-since the code is agent-written. Optionally extend `DefaultLanzerCampaignRunner` to control which
+blocks, also implement `execute(request)`: the request carries the workspace root, the entry (its
+alias, whether it is generated or support, its path, and its parsed document when it is in your
+language) and every loaded document. Run the program from the entry — however your language runs a
+project — and return what it printed, whether it completed, and any error or timeout, bounding time
+and output, since the code is agent-written. Optionally extend `DefaultLanzerCampaignRunner` to control which
 diagnostics count as failures. These overrides never modify your language itself.
 
 **2. The wiring** ([`lox-host.ts`](packages/lanzer-lox/src/lox-host.ts)) — call the generic

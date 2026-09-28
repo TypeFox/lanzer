@@ -276,3 +276,54 @@ describe('the Codex MCP transport', () => {
         expect(run.attemptLog.map((attempt) => attempt.kind)).toEqual(['initial', 'fix', 'fix']);
     });
 });
+
+describe('a support file that a run starts from', () => {
+    /** A campaign whose run starts from a provided driver; returns its job and the driver's path. */
+    async function driverCampaign() {
+        const [campaign] = await loadCampaignSpecs([
+            'import "mini.langium"',
+            'campaign driven {',
+            `    workspace ${JSON.stringify(workspace)}`,
+            '    file main at "main.mini" generates Module {}',
+            '    support driver at "driver.mini"',
+            '    run driver { expect runs }',
+            '}'
+        ].join('\n'));
+        const [drivenJob] = buildLanzerGenerationJobs(resolveLanzerCampaign(campaign));
+        const driverPath = join(workspace, 'driver.mini');
+        await writeFile(driverPath, 'fn main() { call helper; }', 'utf8');
+        return { drivenJob, driverPath };
+    }
+
+    async function runWith(drivenJob: LanzerGenerationJob, script: Step[][]) {
+        const scriptPath = join(dir, 'driver-script.json');
+        const logPath = join(dir, 'driver-agent.log');
+        await writeFile(scriptPath, JSON.stringify(script), 'utf8');
+        await writeFile(logPath, '', 'utf8');
+        return runLanzerCampaignTaskOverAcp([drivenJob], {
+            command: process.execPath,
+            args: [fixture('fake-agent.mjs')],
+            env: { FAKE_AGENT_SCRIPT: scriptPath, FAKE_AGENT_LOG: logPath },
+            maxAttempts: 1,
+            validate: async () => ({ ok: true, issues: [] })
+        });
+    }
+
+    test('left as provided, the run is not failed on its account', async () => {
+        const { drivenJob } = await driverCampaign();
+        const run = await runWith(drivenJob, [[{ write: drivenJob.absoluteOutputPath, content: 'fn helper() { return; }' }]]);
+        expect(run.validation).toEqual({ ok: true, issues: [] });
+    });
+
+    test('rewritten by the agent, it fails the run', async () => {
+        const { drivenJob, driverPath } = await driverCampaign();
+        const run = await runWith(drivenJob, [[
+            { write: drivenJob.absoluteOutputPath, content: 'fn helper() { return; }' },
+            { write: driverPath, content: 'fn main() { return; }' }
+        ]]);
+        expect(run.validation?.ok).toBe(false);
+        expect(run.validation?.issues).toEqual([
+            `A run starts from ${driverPath}, which the campaign provides; it must not be changed, but it was changed during this run.`
+        ]);
+    });
+});

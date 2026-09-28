@@ -145,8 +145,8 @@ If you write a selector and Lanzer says it's not reachable, the path you describ
 ## Behaviour: `run` blocks
 
 Requirements check what the generated code *is*; a `run` block checks what it *does*. After the
-requirements, a campaign may list any number of runs, each naming a declared file as the program's
-entry (the host receives every generated file, so multi-file programs work):
+requirements, a campaign may list any number of runs, each naming the declared file the program
+starts from — a generated file, or a `support` file the campaign provides:
 
 ```lanzer
     run mainFile {
@@ -158,6 +158,13 @@ entry (the host receives every generated file, so multi-file programs work):
     }
 ```
 
+- The entry must be a declared `file` or `support` alias; anything else is a validation error.
+- The host gets the whole workspace, so programs may span files: Lox runs the entry with every
+  other file's functions, classes and top-level variables in scope (their other statements do not
+  run); a compiled language would build the workspace and treat the entry as its main.
+- A support file as the entry is a test driver: it calls the generated code and prints results, so
+  the check does not depend on what the agent chooses to print. The agent must not change it —
+  a run whose driver was edited fails.
 - Every expectation in a block must hold, and every run must first finish on its own.
 - Runs happen only once the files are valid; a failure is reported at the `behaviour` stage, with
   the expected and actual output.

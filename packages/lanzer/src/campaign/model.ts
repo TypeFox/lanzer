@@ -119,9 +119,11 @@ export interface LanzerPseudoClass {
     selector: LanzerSelector;
 }
 
-/** One `run` block: the declared file to run as the program's entry, and what must hold. */
+/** One `run` block: the declared file the program is run from, and what must hold. */
 export interface LanzerRunSpec {
-    fileAlias: string;
+    entryAlias: string;
+    /** A file the agent generates, or a support file the campaign provides (e.g. a test driver). */
+    entryKind: 'generated' | 'support';
     expectations: LanzerExpectation[];
 }
 

@@ -15,6 +15,7 @@ import type {
     SupportFileSpec,
     SymbolRequirement
 } from '../generated/ast.js';
+import { isSupportFileSpec } from '../generated/ast.js';
 import type { LanzerDocumentSpec, LanzerWorkspaceFolder } from '../services/types.js';
 import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
 import { asLiteral } from '../util/guards.js';
@@ -244,7 +245,8 @@ function mapPredicate(predicate: Predicate): LanzerPredicate {
 
 function mapRun(run: RunSpec): LanzerRunSpec {
     return {
-        fileAlias: run.file.ref?.name ?? run.file.$refText,
+        entryAlias: run.entry.ref?.name ?? run.entry.$refText,
+        entryKind: isSupportFileSpec(run.entry.ref) ? 'support' : 'generated',
         expectations: run.expectations.map((expectation) => mapExpectation(expectation))
     };
 }

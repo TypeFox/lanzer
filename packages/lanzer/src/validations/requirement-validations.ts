@@ -2,7 +2,6 @@ import { resolve as resolvePath } from 'node:path';
 import type { AstNode, AstReflection, LangiumDocument } from 'langium';
 import type {
     LanzerCampaignSpec,
-    LanzerFileSpec,
     LanzerRequirementSpec
 } from '../campaign/model.js';
 import { renderSelector } from '../campaign/jobs.js';
@@ -164,7 +163,12 @@ function collectFromSelector(selector: import('../campaign/model.js').LanzerSele
 // Re-export so the file's only public callable is the orchestration helper.
 export { evaluateSelector } from './selector-evaluator.js';
 
-// Helper retained for symmetry — callers may want this when constructing fileAlias maps elsewhere.
-export function getCampaignFileAbsolutePath(campaign: LanzerCampaignSpec, file: LanzerFileSpec): string {
+/** Absolute path of a declared file — generated or support — in the campaign's workspace. */
+export function getCampaignFileAbsolutePath(campaign: LanzerCampaignSpec, file: { path: string }): string {
     return resolvePath(resolveCampaignBaseDir(campaign), file.path);
+}
+
+/** Absolute path of the directory the campaign's files are generated into. */
+export function getCampaignWorkspaceRoot(campaign: LanzerCampaignSpec): string {
+    return resolvePath(resolveCampaignBaseDir(campaign));
 }

@@ -36,7 +36,7 @@ describe('shipped example campaigns against the Lox grammar', () => {
 
         const result = await createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer.CampaignRunner.validateCampaign(campaign.request);
         expect(result.campaign?.issues).toEqual([]);
-        expect(result.behaviour).toMatchObject({ ok: true, runs: [{ fileAlias: 'mainFile', execution: { output: '1\n2\n6\n24\n120\n' } }] });
+        expect(result.behaviour).toMatchObject({ ok: true, runs: [{ entryAlias: 'mainFile', execution: { output: '1\n2\n6\n24\n120\n' } }] });
         expect(result.ok).toBe(true);
     });
 });

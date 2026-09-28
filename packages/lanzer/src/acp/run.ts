@@ -671,6 +671,8 @@ interface WorkspaceSnapshot {
     files: Set<string>;
     /** Modification time of each declared target that already existed when the run started. */
     targetTimes: Map<string, number>;
+    /** Content of each support file a `run` block starts from, or `undefined` if it did not exist. */
+    runEntryContents: Map<string, string | undefined>;
 }
 
 /**
@@ -741,7 +743,13 @@ export async function runLanzerCampaignTaskOverAcp(
     const sessionCwd = jobs[0]?.workspaceRoot ?? options.cwd ?? process.cwd();
     const expectedOutputPaths = jobs.map((job) => resolve(job.absoluteOutputPath));
     const supportPaths = jobs[0]?.supportFiles.map((file) => resolve(file.absolutePath)) ?? [];
-    const baselineSnapshot = await captureWorkspaceSnapshot(sessionCwd, expectedOutputPaths);
+    // A support file that a run starts from is the campaign's own driver — a test harness calling
+    // the generated code. The agent may manage other support files, but not this one: rewriting
+    // the harness is a way to pass the run without the code doing what it checks.
+    const runEntryPaths = (jobs[0]?.runs ?? [])
+        .filter((run) => run.entryKind === 'support')
+        .map((run) => resolve(run.absoluteEntryPath));
+    const baselineSnapshot = await captureWorkspaceSnapshot(sessionCwd, expectedOutputPaths, runEntryPaths);
     return executeLanzerTaskOverAcp(
         task,
         {
@@ -1845,6 +1853,12 @@ async function validateCampaignFileSet(
         }
     }
 
+    for (const [filePath, before] of baseline.runEntryContents) {
+        if (await readTextIfExists(filePath) !== before) {
+            issues.push(`A run starts from ${filePath}, which the campaign provides; it must not be changed, but it was changed during this run.`);
+        }
+    }
+
     for (const filePath of currentFiles) {
         // Support files are declared, so they are never interlopers however they got there.
         if (!baseline.files.has(filePath) && !expected.has(filePath) && !support.has(filePath)) {
@@ -1865,7 +1879,8 @@ async function validateCampaignFileSet(
 
 async function captureWorkspaceSnapshot(
     workspaceRoot: string,
-    targets: string[]
+    targets: string[],
+    runEntries: string[]
 ): Promise<WorkspaceSnapshot> {
     const files = await listFilesRecursive(workspaceRoot);
     const targetTimes = new Map<string, number>();
@@ -1875,7 +1890,20 @@ async function captureWorkspaceSnapshot(
             targetTimes.set(resolve(target), modified);
         }
     }
-    return { files, targetTimes };
+    const runEntryContents = new Map<string, string | undefined>();
+    for (const entry of runEntries) {
+        runEntryContents.set(entry, await readTextIfExists(entry));
+    }
+    return { files, targetTimes, runEntryContents };
+}
+
+/** A file's text, or `undefined` when there is no such file. */
+async function readTextIfExists(filePath: string): Promise<string | undefined> {
+    try {
+        return await readFile(filePath, 'utf8');
+    } catch {
+        return undefined;
+    }
 }
 
 /** A file's modification time, or `undefined` when there is no such file. */

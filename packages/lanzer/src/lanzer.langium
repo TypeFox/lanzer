@@ -34,11 +34,16 @@ SupportFileSpec:
     'at' path=STRING
     ('description' description=STRING)?;
 
-// Run an entry file and check what it does. Every expectation in the block must hold.
+// Run the program from an entry file and check what it does. Every expectation in the block must
+// hold. The entry is a generated file or a support file (a fixed driver calling generated code); the
+// host decides what running from it means — an interpreter runs it, a compiled language builds the
+// workspace and runs its main.
 RunSpec:
-    'run' file=[FileSpec:ID] '{'
+    'run' entry=[RunEntry:ID] '{'
         expectations+=Expectation*
     '}';
+
+type RunEntry = FileSpec | SupportFileSpec;
 
 // `expect runs` asks only that the program finish without a runtime error or timeout. An output
 // check compares the whole output (no mode), a substring (`contains`) or a regex (`matches`);

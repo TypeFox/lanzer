@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { isOperationCancelled, type LangiumDocument } from 'langium';
-import { isLoxProgram } from 'langium-lox';
+import { isClass, isFunctionDeclaration, isLoxProgram, isVariableDeclaration, type LoxElement, type LoxProgram } from 'langium-lox';
 import { runProgram } from 'langium-lox/interpreter';
 import {
     DefaultLanzerCampaignRunner,
@@ -12,11 +12,17 @@ import { withLoxDiagnosticCode } from './lox-diagnostic-codes.js';
 import type {
     LanzerDocumentResult,
     LanzerDslSkillReference,
+    LanzerExecutionRequest,
     LanzerExecutionResult,
     LanzerGenerationJob,
     LanzerGenerationPolicy,
     LanzerGenerationPolicyReferenceFile
 } from 'lanzer';
+
+/** What another file contributes to the program: what it declares, not what it does. */
+function isTopLevelDeclaration(element: LoxElement): boolean {
+    return isFunctionDeclaration(element) || isClass(element) || isVariableDeclaration(element);
+}
 
 /** How much output a run keeps; a program printing past this is cut off, not the process. */
 const LOX_OUTPUT_LIMIT = 64 * 1024;
@@ -117,12 +123,16 @@ export class LoxLanzerService extends DefaultLanzerService {
      * timeout). Output is captured the way the Lox CLI prints it — each value followed by a newline —
      * and capped, so a program printing in a loop cannot exhaust memory before it times out.
      *
-     * Lox has no imports, so the program is the entry file alone.
+     * Lox has no modules, but Langium resolves its top-level names across every file in the
+     * workspace, so a generated program may call a function another file declares — and it
+     * type-checks. Running matches that: the other Lox files' top-level declarations (functions,
+     * classes, top-level variables) come first, then the entry's statements. The other files'
+     * remaining statements are not run; only the entry is the program.
      */
-    async execute(entry: LangiumDocument): Promise<LanzerExecutionResult> {
+    async execute(request: LanzerExecutionRequest): Promise<LanzerExecutionResult> {
         const startedAt = Date.now();
-        const program = entry.parseResult.value;
-        if (!isLoxProgram(program)) {
+        const entry = request.entry.document?.parseResult.value;
+        if (!isLoxProgram(entry)) {
             return { completed: false, output: '', error: 'the entry file is not a Lox program', timedOut: false, durationMs: 0 };
         }
         let output = '';
@@ -131,6 +141,12 @@ export class LoxLanzerService extends DefaultLanzerService {
                 output += `${String(value)}\n`;
             }
         };
+        const declarations = request.documents
+            .filter((document) => document !== request.entry.document)
+            .map((document) => document.parseResult.value)
+            .filter(isLoxProgram)
+            .flatMap((other) => other.elements.filter(isTopLevelDeclaration));
+        const program: LoxProgram = { $type: 'LoxProgram', elements: [...declarations, ...entry.elements] };
         try {
             await runProgram(program, { log });
             return { completed: true, output, timedOut: false, durationMs: Date.now() - startedAt };
