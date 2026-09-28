@@ -75,7 +75,7 @@ async function planAction(
         const service = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer.Lanzer;
         const wanted = new Set(selected.map((job) => job.campaignName));
         for (const campaign of result.resolvedCampaigns.filter((resolved) => wanted.has(resolved.campaign.name))) {
-            prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service)).prompt });
+            prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service, resolveAcpOptionsFromEnv())).prompt });
         }
     }
 

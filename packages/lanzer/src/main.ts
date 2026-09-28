@@ -8,7 +8,7 @@ import { buildLanzerGenerationJobs, findLanzerGenerationJob } from './campaign/j
 import { loadLanzerDocumentFromFile } from './campaign/load.js';
 import { resolveLanzerCampaignFile } from './campaign/resolve.js';
 import { createLanzerServices } from './lanzer-module.js';
-import { previewLanzerCampaignTask } from './services/campaign-run.js';
+import { previewLanzerCampaignTask, resolveAcpOptionsFromEnv } from './services/campaign-run.js';
 import { DefaultLanzerService } from './services/default-services.js';
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
@@ -121,7 +121,7 @@ async function previewPrompts(
     const wanted = new Set(campaignNames);
     const prompts: { campaign: string; prompt: string }[] = [];
     for (const campaign of campaigns.filter((resolved) => wanted.has(resolved.campaign.name))) {
-        prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service)).prompt });
+        prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service, resolveAcpOptionsFromEnv())).prompt });
     }
     return prompts;
 }

@@ -689,6 +689,21 @@ function promptToolNames(toolkit: LanzerToolkit | undefined): LanzerPromptToolNa
     };
 }
 
+/** The toolkit a run actually serves: none over a transport that cannot carry Lanzer's tools. */
+function servedToolkit(options: RunLanzerAgentTaskOptions): LanzerToolkit | undefined {
+    return lanzerTransportServesTools(options) ? options.toolkit : undefined;
+}
+
+/**
+ * Whether the agent these settings select can be offered Lanzer's tools.
+ *
+ * ACP sessions take MCP servers; the Codex MCP transport has no way to hand it one. A prompt that
+ * names tools the agent cannot reach costs a turn discovering they are not there.
+ */
+export function lanzerTransportServesTools(agent: Pick<RunLanzerAgentTaskOptions, 'provider' | 'command' | 'args'>): boolean {
+    return !shouldUseCodexMcpTransport(agent);
+}
+
 /** Every Lanzer tool by the name the agent sees, as `mcp__lanzer__<tool>`. */
 export const LANZER_TOOL_PROMPT_NAMES = {
     validate: 'mcp__lanzer__validate',
@@ -699,7 +714,7 @@ export async function runLanzerAgentTaskOverAcp(
     job: LanzerGenerationJob,
     options: RunLanzerAgentTaskOptions
 ): Promise<LanzerAgentRunResult> {
-    const task = buildLanzerAgentTask(job, options.policy, options.dslSkill, promptToolNames(options.toolkit));
+    const task = buildLanzerAgentTask(job, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
     return executeLanzerTaskOverAcp(
         task,
         {
@@ -722,7 +737,7 @@ export async function runLanzerCampaignTaskOverAcp(
     jobs: LanzerGenerationJob[],
     options: RunLanzerAgentTaskOptions
 ): Promise<LanzerAgentRunResult> {
-    const task = buildLanzerCampaignTask(jobs, options.policy, options.dslSkill, promptToolNames(options.toolkit));
+    const task = buildLanzerCampaignTask(jobs, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
     const sessionCwd = jobs[0]?.workspaceRoot ?? options.cwd ?? process.cwd();
     const expectedOutputPaths = jobs.map((job) => resolve(job.absoluteOutputPath));
     const supportPaths = jobs[0]?.supportFiles.map((file) => resolve(file.absolutePath)) ?? [];
@@ -779,7 +794,6 @@ async function executeLanzerTaskOverAcp(
     );
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
     const client = new RecordingClient(context.roots, permissions, options.progress);
-    const { fixIterations, retryIterations } = resolveAttemptBudget(options);
     emitRunProgress(options.progress, chalk.dim('[perm]'), 'allowing', describePermissionPolicy(permissions));
 
     const toolHost = options.toolkit
@@ -810,13 +824,7 @@ async function executeLanzerTaskOverAcp(
                 }
             }));
 
-            let stopReason = 'unknown';
-            let attempts = 0;
-            let lastSessionId = '';
             const openedSessions: string[] = [];
-            const attemptLog: LanzerAttemptRecord[] = [];
-            let lastExtraFiles: string[] = [];
-            let lastStaleFiles: string[] = [];
             const tokens = { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 };
             /** Token counts are per-turn and additive, unlike the cumulative `usage_update` figures. */
             const addTokens = (usage: acp.Usage | null | undefined): void => {
@@ -827,118 +835,42 @@ async function executeLanzerTaskOverAcp(
                 tokens.cachedReadTokens += usage.cachedReadTokens ?? 0;
                 tokens.cachedWriteTokens += usage.cachedWriteTokens ?? 0;
             };
-            let validation: LanzerAgentValidationResult | undefined = options.validate
-                ? { ok: false, issues: [] }
-                : undefined;
 
             try {
-            retryLoop: for (let retry = 1; retry <= retryIterations; retry++) {
-                const session = await atStage(stage, 'session', () => openConfiguredSession(agent, context, options, permissions, toolHost));
-                lastSessionId = session.sessionId;
-                openedSessions.push(session.sessionId);
-
-                attempts += 1;
-                const initialStartedAt = Date.now();
-                const initialResponse = await atStage(stage, 'turn', () => agent.request(acp.AGENT_METHODS.session_prompt, {
-                    sessionId: session.sessionId,
-                    prompt: [{ type: 'text', text: task.prompt }]
-                }));
-                stopReason = initialResponse.stopReason;
-                addTokens(initialResponse.usage);
-
-                if (!options.validate) {
-                    attemptLog.push({
-                        index: attempts, kind: 'initial', session: retry, stopReason,
-                        durationMs: Date.now() - initialStartedAt, issueCount: 0, issues: []
-                    });
-                    break;
-                }
-
-                validation = await options.validate();
-                if (extraValidate) {
-                    const fileSet = await extraValidate(client);
-                    lastExtraFiles = fileSet.extraFiles;
-                    lastStaleFiles = fileSet.staleFiles;
-                    validation = mergeValidationResults(validation, fileSet);
-                }
-                attemptLog.push({
-                    index: attempts, kind: 'initial', session: retry, stopReason,
-                    durationMs: Date.now() - initialStartedAt,
-                    issueCount: validation.issues.length, issues: [...validation.issues]
-                });
-                if (validation.ok) break retryLoop;
-
-                // A fix pass that returns the same diagnostics as the one before it did not move
-                // the file. Repeating the prompt then costs a full turn to be told the same thing:
-                // one Type-C campaign spent eight passes, 22 minutes and $5.31 being told the same
-                // unsatisfiable requirement, with the agent itself saying it had stopped editing.
-                let lastIssueSignature = issueSignature(validation);
-                let stalledPasses = 0;
-
-                for (let fix = 1; fix <= fixIterations; fix++) {
-                    attempts += 1;
-                    const fixStartedAt = Date.now();
-                    const fixResponse = await atStage(stage, 'turn', () => agent.request(acp.AGENT_METHODS.session_prompt, {
-                        sessionId: session.sessionId,
-                        prompt: [{
-                            type: 'text',
-                            text: appendPermissionNotice(buildRetryPrompt(validation, fix), client.getDeniedToolCalls())
-                        }]
-                    }));
-                    stopReason = fixResponse.stopReason;
-                    addTokens(fixResponse.usage);
-
-                    validation = await options.validate();
-                    if (extraValidate) {
-                        const fileSet = await extraValidate(client);
-                        lastExtraFiles = fileSet.extraFiles;
-                        lastStaleFiles = fileSet.staleFiles;
-                        validation = mergeValidationResults(validation, fileSet);
+                const outcome = await runAttemptLoop(task, options, {
+                    openSession: async () => {
+                        const session = await atStage(stage, 'session', () => openConfiguredSession(agent, context, options, permissions, toolHost));
+                        openedSessions.push(session.sessionId);
+                        return session.sessionId;
+                    },
+                    prompt: async (sessionId, text) => {
+                        const response = await atStage(stage, 'turn', () => agent.request(acp.AGENT_METHODS.session_prompt, {
+                            sessionId,
+                            prompt: [{ type: 'text', text }]
+                        }));
+                        addTokens(response.usage);
+                        return { stopReason: response.stopReason };
                     }
-                    attemptLog.push({
-                        index: attempts, kind: 'fix', session: retry, stopReason,
-                        durationMs: Date.now() - fixStartedAt,
-                        issueCount: validation.issues.length, issues: [...validation.issues]
-                    });
-                    if (validation.ok) break retryLoop;
+                }, buildRetryPrompt, extraValidate ? () => extraValidate(client) : undefined, () => client.getDeniedToolCalls());
 
-                    const signature = issueSignature(validation);
-                    if (signature === lastIssueSignature) {
-                        stalledPasses += 1;
-                        if (stalledPasses >= STALLED_FIX_PASSES) {
-                            emitRunProgress(
-                                options.progress,
-                                chalk.dim('[fix]'),
-                                chalk.yellow('stalled:'),
-                                `${stalledPasses + 1} passes produced identical diagnostics; abandoning this session's fix budget`
-                            );
-                            break;
-                        }
-                    } else {
-                        stalledPasses = 0;
-                        lastIssueSignature = signature;
-                    }
-                }
-            }
-
-            const result = client.getResult();
-            return {
-                task,
-                sessionId: lastSessionId,
-                attempts,
-                stopReason,
-                outputText: result.outputText,
-                agentThoughtText: result.thoughtText,
-                rawUpdates: result.rawUpdates,
-                validation,
-                attemptLog,
-                extraFiles: [...lastExtraFiles],
-                staleFiles: [...lastStaleFiles],
-                toolCalls: [...(toolHost?.calls() ?? [])],
-                deniedToolCalls: client.getDeniedToolCalls(),
-                usage: mergeUsage(tokens, client.getReportedUsage()),
-                durationMs: Date.now() - startedAtMs
-            };
+                const result = client.getResult();
+                return {
+                    task,
+                    sessionId: outcome.lastSessionId,
+                    attempts: outcome.attempts,
+                    stopReason: outcome.stopReason,
+                    outputText: result.outputText,
+                    agentThoughtText: result.thoughtText,
+                    rawUpdates: result.rawUpdates,
+                    validation: outcome.validation,
+                    attemptLog: outcome.attemptLog,
+                    extraFiles: outcome.extraFiles,
+                    staleFiles: outcome.staleFiles,
+                    toolCalls: [...(toolHost?.calls() ?? [])],
+                    deniedToolCalls: client.getDeniedToolCalls(),
+                    usage: mergeUsage(tokens, client.getReportedUsage()),
+                    durationMs: Date.now() - startedAtMs
+                };
             } finally {
                 await closeSessionsQuietly(agent, openedSessions);
             }
@@ -1135,9 +1067,7 @@ async function executeLanzerTaskOverCodex(
     extraValidate?: (_client: RecordingClient) => Promise<LanzerFileSetResult>
 ): Promise<LanzerAgentRunResult> {
     const startedAtMs = Date.now();
-    const { fixIterations, retryIterations } = resolveAttemptBudget(options);
     const rawUpdates: LanzerAgentRunUpdate[] = [];
-    const sessionId = randomUUID();
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
     const client = new RecordingClient(context.roots, permissions, options.progress);
     const spawnConfig = resolveCodexSpawnConfig(options);
@@ -1152,6 +1082,14 @@ async function executeLanzerTaskOverCodex(
             chalk.dim('[perm]'),
             chalk.yellow('warning:'),
             'the Codex MCP transport cannot refuse shell access separately from file writes; `execute` is not enforced for this run'
+        );
+    }
+    if (options.toolkit) {
+        emitRunProgress(
+            options.progress,
+            chalk.dim('[tools]'),
+            chalk.yellow('warning:'),
+            'Lanzer tools are not served over the Codex MCP transport; the prompt does not offer them'
         );
     }
     const transport = new StdioClientTransport({
@@ -1171,11 +1109,8 @@ async function executeLanzerTaskOverCodex(
 
     let outputText = '';
     let thoughtText = '';
-    let stopReason = 'unknown';
-    let validation: LanzerAgentValidationResult | undefined = options.validate
-        ? { ok: false, issues: [] }
-        : undefined;
-    let attempts = 0;
+    /** Codex restates its running totals on each `token_count`, so the latest one is the run's. */
+    let tokens = { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 };
 
     mcpClient.fallbackNotificationHandler = async (notification) => {
         if (notification.method !== 'codex/event') {
@@ -1206,11 +1141,14 @@ async function executeLanzerTaskOverCodex(
                 }
                 break;
             }
+            case 'token_count':
+                tokens = codexTokenTotals(msg) ?? tokens;
+                rawUpdates.push({ kind: 'token_count' });
+                break;
             case 'task_started':
                 rawUpdates.push({ kind: 'task_started', status: 'running' });
                 break;
             case 'task_complete':
-                stopReason = 'end_turn';
                 rawUpdates.push({ kind: 'task_complete', status: 'completed' });
                 break;
             default:
@@ -1224,77 +1162,187 @@ async function executeLanzerTaskOverCodex(
             timeout: 300_000
         }));
 
-        // Codex's MCP transport is stateless per call — every prompt starts a fresh
-        // conversation. Retry and fix iterations both reduce to "send another prompt";
-        // we honour the budgets by flattening the two loops into one with the same
-        // total cap of `retryIterations * (1 + fixIterations)` prompts.
-        const codexLoop: { kind: 'initial' | 'fix'; fixPass: number }[] = [];
-        for (let retry = 0; retry < retryIterations; retry++) {
-            codexLoop.push({ kind: 'initial', fixPass: 0 });
-            for (let fix = 1; fix <= fixIterations; fix++) {
-                codexLoop.push({ kind: 'fix', fixPass: fix });
-            }
-        }
-
-        for (const step of codexLoop) {
-            attempts += 1;
-            const promptText = step.kind === 'initial'
-                ? task.prompt
-                : buildRetryPrompt(validation, step.fixPass);
-            const beforeLength = outputText.length;
-            const result = await atStage(stage, 'turn', () => mcpClient.callTool(
-                {
-                    name: 'codex',
-                    arguments: buildCodexToolArguments(task, promptText, options, permissions)
-                },
-                undefined,
-                {
-                    timeout: 300_000,
-                    resetTimeoutOnProgress: true
+        const outcome = await runAttemptLoop(task, options, {
+            // Every call is its own conversation, so a session is only a label for the attempt log.
+            openSession: async () => randomUUID(),
+            prompt: async (_sessionId, text, kind) => {
+                // With no conversation to remember it, a fix pass has to carry the task it fixes;
+                // diagnostics alone leave the agent without the requirements they refer to.
+                const promptText = kind === 'fix' ? `${task.prompt}\n\n${text}` : text;
+                const beforeLength = outputText.length;
+                const result = await atStage(stage, 'turn', () => mcpClient.callTool(
+                    {
+                        name: 'codex',
+                        arguments: buildCodexToolArguments(task, promptText, options, permissions)
+                    },
+                    undefined,
+                    {
+                        timeout: 300_000,
+                        resetTimeoutOnProgress: true
+                    }
+                ));
+                if (outputText.length === beforeLength) {
+                    outputText += extractCodexToolText(result);
                 }
-            ));
-
-            if (outputText.length === beforeLength) {
-                outputText += extractCodexToolText(result);
+                return { stopReason: 'end_turn' };
             }
-            stopReason = stopReason === 'unknown' ? 'end_turn' : stopReason;
-
-            if (!options.validate) {
-                break;
-            }
-
-            validation = await options.validate();
-            if (extraValidate) {
-                validation = mergeValidationResults(validation, await extraValidate(client));
-            }
-            if (validation.ok) {
-                break;
-            }
-        }
+        }, buildRetryPrompt, extraValidate ? () => extraValidate(client) : undefined, () => client.getDeniedToolCalls());
 
         return {
             task,
-            sessionId,
-            attempts,
-            stopReason,
+            sessionId: outcome.lastSessionId,
+            attempts: outcome.attempts,
+            stopReason: outcome.stopReason,
             outputText,
             agentThoughtText: thoughtText,
             rawUpdates,
-            validation,
-            attemptLog: [],
-            extraFiles: [],
-            staleFiles: [],
+            validation: outcome.validation,
+            attemptLog: outcome.attemptLog,
+            extraFiles: outcome.extraFiles,
+            staleFiles: outcome.staleFiles,
             toolCalls: [],
             deniedToolCalls: client.getDeniedToolCalls(),
-            usage: mergeUsage(
-                { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 },
-                client.getReportedUsage()
-            ),
+            usage: mergeUsage(tokens, client.getReportedUsage()),
             durationMs: Date.now() - startedAtMs
         };
     } finally {
         await mcpClient.close().catch(() => undefined);
     }
+}
+
+/**
+ * The running token totals from a Codex `token_count` event, when it carries them.
+ *
+ * Read defensively: the event is Codex's own, outside any protocol Lanzer is built against, and a
+ * shape that does not match leaves the totals as they were rather than guessing.
+ */
+function codexTokenTotals(msg: object): LanzerAgentUsage | undefined {
+    const info = 'info' in msg && isRecord(msg.info) ? msg.info : undefined;
+    const total = info && isRecord(info.total_token_usage) ? info.total_token_usage : undefined;
+    if (!total) {
+        return undefined;
+    }
+    const count = (key: string): number => (typeof total[key] === 'number' ? total[key] : 0);
+    return {
+        totalTokens: count('total_tokens'),
+        inputTokens: count('input_tokens'),
+        outputTokens: count('output_tokens'),
+        cachedReadTokens: count('cached_input_tokens'),
+        cachedWriteTokens: 0
+    };
+}
+
+/** How one transport talks to the agent, for {@link runAttemptLoop}. */
+interface AttemptTransport {
+    /** Start a fresh conversation — for the first attempt and for each retry — and name it. */
+    openSession(): Promise<string>;
+    /** Send one prompt in a conversation and wait for the turn to end. */
+    prompt(sessionId: string, text: string, kind: 'initial' | 'fix'): Promise<{ stopReason: string }>;
+}
+
+interface AttemptLoopOutcome {
+    attempts: number;
+    stopReason: string;
+    lastSessionId: string;
+    attemptLog: LanzerAttemptRecord[];
+    validation?: LanzerAgentValidationResult;
+    extraFiles: string[];
+    staleFiles: string[];
+}
+
+/**
+ * Prompt, validate and fix until the files pass or the budget runs out — for every transport.
+ *
+ * Each retry opens a fresh conversation and sends the task; within it, each fix pass sends the
+ * findings of the last validation. A session whose fix passes stop changing the findings is
+ * abandoned for the next retry. The transport decides only how a prompt reaches the agent, so the
+ * attempt log, stall detection and file-set findings mean the same thing whichever agent ran.
+ */
+async function runAttemptLoop(
+    task: LanzerTaskPayload,
+    options: RunLanzerAgentTaskOptions,
+    transport: AttemptTransport,
+    buildRetryPrompt: (validation: LanzerAgentValidationResult | undefined, attempt: number) => string,
+    checkFileSet: (() => Promise<LanzerFileSetResult>) | undefined,
+    deniedToolCalls: () => { kind: string; title: string }[]
+): Promise<AttemptLoopOutcome> {
+    const { fixIterations, retryIterations } = resolveAttemptBudget(options);
+    const outcome: AttemptLoopOutcome = {
+        attempts: 0,
+        stopReason: 'unknown',
+        lastSessionId: '',
+        attemptLog: [],
+        validation: options.validate ? { ok: false, issues: [] } : undefined,
+        extraFiles: [],
+        staleFiles: []
+    };
+
+    /** Send one prompt, validate what it left behind, and log both. */
+    const attempt = async (sessionId: string, session: number, kind: 'initial' | 'fix', text: string): Promise<LanzerAgentValidationResult | undefined> => {
+        outcome.attempts += 1;
+        const startedAt = Date.now();
+        outcome.stopReason = (await transport.prompt(sessionId, text, kind)).stopReason;
+        let validation: LanzerAgentValidationResult | undefined;
+        if (options.validate) {
+            validation = await options.validate();
+            if (checkFileSet) {
+                const fileSet = await checkFileSet();
+                outcome.extraFiles = fileSet.extraFiles;
+                outcome.staleFiles = fileSet.staleFiles;
+                validation = mergeValidationResults(validation, fileSet);
+            }
+            outcome.validation = validation;
+        }
+        outcome.attemptLog.push({
+            index: outcome.attempts, kind, session, stopReason: outcome.stopReason,
+            durationMs: Date.now() - startedAt,
+            issueCount: validation?.issues.length ?? 0, issues: [...(validation?.issues ?? [])]
+        });
+        return validation;
+    };
+
+    for (let retry = 1; retry <= retryIterations; retry++) {
+        const sessionId = await transport.openSession();
+        outcome.lastSessionId = sessionId;
+
+        let validation = await attempt(sessionId, retry, 'initial', task.prompt);
+        if (!validation || validation.ok) {
+            return outcome;
+        }
+
+        // A fix pass that returns the same diagnostics as the one before it did not move
+        // the file. Repeating the prompt then costs a full turn to be told the same thing:
+        // one Type-C campaign spent eight passes, 22 minutes and $5.31 being told the same
+        // unsatisfiable requirement, with the agent itself saying it had stopped editing.
+        let lastIssueSignature = issueSignature(validation);
+        let stalledPasses = 0;
+
+        for (let fix = 1; fix <= fixIterations; fix++) {
+            const text = appendPermissionNotice(buildRetryPrompt(validation, fix), deniedToolCalls());
+            validation = await attempt(sessionId, retry, 'fix', text);
+            if (!validation || validation.ok) {
+                return outcome;
+            }
+
+            const signature = issueSignature(validation);
+            if (signature === lastIssueSignature) {
+                stalledPasses += 1;
+                if (stalledPasses >= STALLED_FIX_PASSES) {
+                    emitRunProgress(
+                        options.progress,
+                        chalk.dim('[fix]'),
+                        chalk.yellow('stalled:'),
+                        `${stalledPasses + 1} passes produced identical diagnostics; abandoning this session's fix budget`
+                    );
+                    break;
+                }
+            } else {
+                stalledPasses = 0;
+                lastIssueSignature = signature;
+            }
+        }
+    }
+    return outcome;
 }
 
 /**
@@ -1492,7 +1540,7 @@ function isCodexProvider(provider: string | undefined): boolean {
     return normalized === 'codex' || normalized === 'openai';
 }
 
-function shouldUseCodexMcpTransport(options: RunLanzerAgentTaskOptions): boolean {
+function shouldUseCodexMcpTransport(options: Pick<RunLanzerAgentTaskOptions, 'provider' | 'command' | 'args'>): boolean {
     if (!isCodexProvider(options.provider)) {
         return false;
     }
