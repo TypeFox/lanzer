@@ -115,7 +115,7 @@ function mapFileAliasesToRoots(
         const absolute = resolvePath(baseDir, file.path);
         const doc = docByPath.get(normalizePath(absolute));
         if (!doc) {
-            issues.push(`Generated document not loaded for alias '${file.alias}' at ${absolute}`);
+            issues.push(`Generated file for '${file.alias}' was not found, or is not a document of the target language: ${absolute}`);
             continue;
         }
         roots.set(file.alias, doc.parseResult.value);

@@ -28,6 +28,11 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
     const lines: string[] = [];
     const verdict = report.ok ? 'ok' : `failed at ${report.failedStage} — ${report.failedStageDescription}`;
     lines.push(`  ${verdict}`);
+    if (report.failureMessage) {
+        for (const line of report.failureMessage.split('\n')) {
+            lines.push(`    ${line}`);
+        }
+    }
     lines.push(
         `  ${report.attempts} attempt(s), ${formatDuration(report.durationMs)}, stopped: ${report.stopReason}`
     );

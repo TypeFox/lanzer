@@ -61,6 +61,8 @@ export interface LanzerRunReport {
     /** Absent when the run succeeded. */
     failedStage?: LanzerRunStage;
     failedStageDescription?: string;
+    /** What went wrong, for a run that ended before producing a result (`launch`, `session`, `turn`). */
+    failureMessage?: string;
     attempts: number;
     stopReason: string;
     durationMs: number;
