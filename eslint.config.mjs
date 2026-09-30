@@ -14,9 +14,7 @@ export default [
       '**/lib/**',
       '**/dist/**',
       '**/node_modules/**',
-      'packages/langium-lox/**',
-      // Local Type-C test bed: a copy of a third-party language, held unmodified.
-      'packages/typec/**'
+      'packages/langium-lox/**'
     ],
   },
   {
