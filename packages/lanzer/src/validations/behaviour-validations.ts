@@ -8,7 +8,7 @@ import type {
     LanzerRunOutcome,
     LanzerService
 } from '../services/types.js';
-import { getCampaignFileAbsolutePath, getCampaignWorkspaceRoot } from './requirement-validations.js';
+import { getCampaignFileAbsolutePath, getCampaignWorkspaceRoot } from '../campaign/paths.js';
 
 /** How much of an output a finding quotes; enough to see what went wrong, not a whole log. */
 const QUOTED_OUTPUT_LIMIT = 400;

@@ -20,6 +20,7 @@ import { isSupportFileSpec } from '../generated/ast.js';
 import type { LanzerDocumentSpec, LanzerWorkspaceFolder } from '../services/types.js';
 import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
 import { asLiteral } from '../util/guards.js';
+import { getCampaignFileAbsolutePath, getCampaignWorkspaceRoot } from './paths.js';
 import {
     LANZER_COMBINATORS,
     LANZER_DIAGNOSTIC_SEVERITIES,
@@ -97,19 +98,18 @@ export function resolveLanzerCampaign(
     campaign: LanzerCampaignSpec,
     options: ResolveLanzerCampaignOptions = {}
 ): LanzerResolvedCampaign {
-    const workspaceUri = options.workspaceUri ?? resolveWorkspaceUri(campaign);
-    const workspaceBaseDir = resolveWorkspaceBaseDir(campaign);
+    const workspaceUri = options.workspaceUri ?? pathToFileUri(getCampaignWorkspaceRoot(campaign));
     const workspaces: LanzerWorkspaceFolder[] = [{
         name: options.workspaceName ?? campaign.name,
         uri: workspaceUri
     }];
     const documents: LanzerDocumentSpec[] = [
         ...campaign.supportFiles.map((file) => ({
-            path: resolveDocumentPath(file.path, workspaceBaseDir),
+            path: getCampaignFileAbsolutePath(campaign, file),
             description: file.description
         })),
         ...campaign.files.map((file) => ({
-            path: resolveDocumentPath(file.path, workspaceBaseDir),
+            path: getCampaignFileAbsolutePath(campaign, file),
             description: file.description
         }))
     ];
@@ -296,31 +296,6 @@ function inferBaseDir(sourceUri: string | undefined): string | undefined {
         return undefined;
     }
     return path.dirname(fileURLToPath(sourceUri));
-}
-
-function resolveWorkspaceUri(campaign: LanzerCampaignSpec): string {
-    const workspaceBaseDir = resolveWorkspaceBaseDir(campaign);
-    if (workspaceBaseDir) {
-        return pathToFileUri(workspaceBaseDir);
-    }
-    if (campaign.baseDir) {
-        return pathToFileUri(campaign.baseDir);
-    }
-    if (campaign.sourceUri?.startsWith('file:')) {
-        return pathToFileUri(path.dirname(fileURLToPath(campaign.sourceUri)));
-    }
-    return 'memory:/';
-}
-
-function resolveWorkspaceBaseDir(campaign: LanzerCampaignSpec): string | undefined {
-    if (campaign.workspaceRoot) {
-        return resolveDocumentPath(campaign.workspaceRoot, campaign.baseDir);
-    }
-    return campaign.baseDir;
-}
-
-function resolveDocumentPath(filePath: string, baseDir: string | undefined): string {
-    return baseDir ? path.resolve(baseDir, filePath) : filePath;
 }
 
 function pathToFileUri(filePath: string): string {
