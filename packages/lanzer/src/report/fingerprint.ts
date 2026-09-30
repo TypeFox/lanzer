@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LanzerCampaignSpec } from '../campaign/model.js';
-import type { LanzerDslSkillReference } from '../services/types.js';
+import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
 import type { LanzerRunFingerprint } from './model.js';
 
 /** Read once: the version cannot change while the process runs. */
@@ -67,16 +67,41 @@ export async function hashDirectory(dir: string): Promise<string | undefined> {
     return hash.digest('hex');
 }
 
+/** SHA-256 of a text. */
+export function hashText(text: string): string {
+    return createHash('sha256').update(text).digest('hex');
+}
+
+/** JSON with object keys sorted at every level, so the same value always serialises the same. */
+function stableStringify(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+    if (value !== null && typeof value === 'object') {
+        const entries = Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a], [b]) => a.localeCompare(b));
+        return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+/**
+ * The prompt as a run's fingerprint hashes it: with the workspace path replaced by `<workspace>`.
+ * Repeated runs each work in their own copy of the workspace, and the path is not something the
+ * agent was told to do differently.
+ */
+export function normalisePrompt(prompt: string, workspaceRoot: string | undefined): string {
+    return workspaceRoot ? prompt.split(workspaceRoot).join('<workspace>') : prompt;
+}
+
 /**
  * What a run measured: the Lanzer version, the DSL skill, the grammars and the campaign, each with
- * a content hash.
+ * a content hash, and the prompt and host policy it was given.
  *
  * Two reports are only comparable when these say what differs between them. A skill edited in
  * place keeps its name and path, so the hash is what tells "write-lox v2" from v1.
  */
 export async function fingerprintLanzerRun(
     campaign: LanzerCampaignSpec,
-    dslSkill: LanzerDslSkillReference | undefined
+    dslSkill: LanzerDslSkillReference | undefined,
+    given: { prompt?: string; policy?: LanzerGenerationPolicy } = {}
 ): Promise<LanzerRunFingerprint> {
     const baseDir = campaign.baseDir ?? process.cwd();
     const grammars = await Promise.all(
@@ -95,6 +120,8 @@ export async function fingerprintLanzerRun(
             ? { skill: { ...(dslSkill.name ? { name: dslSkill.name } : {}), ...(dslSkill.path ? { path: dslSkill.path } : {}), ...(skillHash ? { hash: skillHash } : {}) } }
             : {}),
         grammars,
-        ...(campaignPath ? { campaign: { path: campaignPath, ...(campaignHash ? { hash: campaignHash } : {}) } } : {})
+        ...(campaignPath ? { campaign: { path: campaignPath, ...(campaignHash ? { hash: campaignHash } : {}) } } : {}),
+        ...(given.prompt !== undefined ? { promptHash: hashText(given.prompt) } : {}),
+        ...(given.policy ? { policyHash: hashText(stableStringify(given.policy)) } : {})
     };
 }

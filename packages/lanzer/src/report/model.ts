@@ -88,6 +88,17 @@ export interface LanzerRunFingerprint {
     grammars: LanzerFingerprintEntry[];
     /** The campaign file itself. */
     campaign?: LanzerFingerprintEntry;
+    /**
+     * SHA-256 of the prompt the agent was first sent, with the workspace path replaced by
+     * `<workspace>` so identical runs in different folders agree. Its text is in
+     * {@link LanzerSuiteReport.prompts} under this hash.
+     */
+    promptHash?: string;
+    /**
+     * SHA-256 of the host's generation policy: the language advice the prompt carries besides the
+     * skill. Kept apart from the prompt's hash, which also moves whenever the campaign is edited.
+     */
+    policyHash?: string;
 }
 
 export interface LanzerRunReport {
@@ -108,6 +119,11 @@ export interface LanzerRunReport {
     configuration?: LanzerRunConfiguration;
     /** What the run measured: Lanzer version, DSL skill, grammars and campaign, with content hashes. */
     fingerprint?: LanzerRunFingerprint;
+    /**
+     * The prompt's text, as hashed. Moved into {@link LanzerSuiteReport.prompts} when a suite
+     * report is built, so a written report holds each prompt once.
+     */
+    prompt?: string;
     files: LanzerReportFile[];
     issues: LanzerIssueTally;
     /**
@@ -165,4 +181,9 @@ export interface LanzerSuiteReport {
     generatedAt: string;
     summary: LanzerSuiteSummary;
     runs: LanzerRunReport[];
+    /**
+     * Each distinct prompt the runs were sent, by {@link LanzerRunFingerprint.promptHash}. Stored
+     * once rather than per run, so two reports whose hashes differ can be diffed.
+     */
+    prompts?: Record<string, string>;
 }

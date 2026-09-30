@@ -12,6 +12,7 @@ import {
     collectLanzerCampaignFiles,
     compareLanzerSuiteReports,
     describeSelectableTypes,
+    lanzerTransportServesTools,
     loadGrammarsFor,
     meetsMinPass,
     parseMinPass,
@@ -177,8 +178,9 @@ export function createLoxLanzerCli(): Command {
         .option('--parallel <k>', 'with --runs, run at most k at once (default 1)')
         .option('--min-pass <share>', 'the share of runs each campaign must pass for a zero exit code: k/n (e.g. 2/3) or a percentage (default: all)')
         .option('--skill <dir>', 'use this write-lox skill folder instead of the default one, e.g. to benchmark a new version of it')
+        .option('--isolated', "run the agent without your own setup (CLAUDE.md/AGENTS.md, settings, skills, hooks), for benchmarks (else LANZER_ACP_ISOLATED)")
         .description('run .lanzer campaigns through an agent to generate the target .lox file(s)')
-        .action(async (paths: string[], options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string; skill?: string }) => {
+        .action(async (paths: string[], options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string; skill?: string; isolated?: boolean }) => {
             // Checked before anything runs: a typo here should not cost a batch of agent runs.
             const runs = options.runs === undefined ? 1 : Number.parseInt(options.runs, 10);
             const parallel = options.parallel === undefined ? 1 : Number.parseInt(options.parallel, 10);
@@ -231,8 +233,13 @@ export function createLoxLanzerCli(): Command {
                 ...(options.model ? { model: options.model } : {}),
                 ...(options.maxAttempts ? { maxAttempts: Number.parseInt(options.maxAttempts, 10) } : {}),
                 ...(permissions ? { permissions } : {}),
+                ...(options.isolated ? { isolated: true } : {}),
                 ...(options.quiet ? {} : { progress: { label: 'lox', verbose: !!options.verbose } })
             });
+            // Said up front: a benchmark believed isolated but not would compare the wrong things.
+            if (acp.isolated && !lanzerTransportServesTools(acp)) {
+                console.error('--isolated has no effect with Codex, which reads AGENTS.md regardless; the report records the run as not isolated.');
+            }
 
             if (acp.permissions && acp.permissions.unknownEntries.length > 0) {
                 console.error(`Unknown tool kind(s) in LANZER_ACP_ALLOW: ${acp.permissions.unknownEntries.join(', ')}`);

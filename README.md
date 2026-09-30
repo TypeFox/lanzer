@@ -315,9 +315,9 @@ class-typed value, inheritance and `super`, functions returned as values, and a 
 each with a reference solution in the tests proving it can be met.
 
 ```shell
-node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --report .lanzer/reports/write-lox-v1.json
+node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --isolated --report .lanzer/reports/write-lox-v1.json
 # edit ../../skills/write-lox, then run the same suite again:
-node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --report .lanzer/reports/write-lox-v2.json
+node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --isolated --report .lanzer/reports/write-lox-v2.json
 node ./bin/lox-lanzer.js compare .lanzer/reports/write-lox-v1.json .lanzer/reports/write-lox-v2.json
 ```
 
@@ -372,10 +372,19 @@ flaky — identical runs split between pass and fail, so chance moves these pass
 
 - **What was measured.** Each run's report carries a `fingerprint`: the Lanzer version, the DSL
   skill's name, path and a content hash over every file in its folder, each imported grammar's hash,
-  and the campaign file's hash. With the run configuration (agent, model, effort, permission mode,
+  the campaign file's hash, and hashes of the prompt the agent was sent and of the host's generation
+  policy (the language advice the prompt carries besides the skill). Each distinct prompt is stored
+  once in the report's `prompts`, with the workspace path written as `<workspace>`, so two prompts
+  that differ can be diffed. With the run configuration (agent, model, effort, permission mode,
   budgets), that is what `compare` lists under `setup`. A skill edited in place keeps its name and
   path; its hash is what tells the two apart. When nothing differs, `compare` says so: the numbers
   are then run-to-run variation.
+- **Isolate benchmark runs.** By default the agent loads your own setup: your settings, `CLAUDE.md`
+  or `AGENTS.md` instructions, installed skills, hooks and plugins. That is what you want when
+  generating, but in a benchmark it means the skill under test is not the only advice the agent
+  gets. `--isolated` (or `LANZER_ACP_ISOLATED=1`) runs Claude without them, and `compare` shows
+  when two reports differ on it. Codex has no such switch and reads `AGENTS.md` regardless, so a
+  Codex run asking for it is recorded as not isolated.
 - **Per run, not totals.** Cost, time, tokens, stage failures and diagnostic codes are divided by
   each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or

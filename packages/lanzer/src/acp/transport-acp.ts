@@ -212,7 +212,11 @@ async function openConfiguredSession(
                     // An allowlist, not a deny-list: `tools` replaces the agent's default set
                     // outright, so anything Lanzer did not name is unreachable — including the
                     // harness tools whose ACP kind is indistinguishable from ones the run needs.
-                    ...(tools ? { tools } : {})
+                    ...(tools ? { tools } : {}),
+                    // The adapter loads user, project and local settings by default; an empty list
+                    // leaves out the user's CLAUDE.md and AGENTS.md instructions, skills, hooks and
+                    // plugins.
+                    ...(options.isolated ? { settingSources: [] } : {})
                 }
             }
         }

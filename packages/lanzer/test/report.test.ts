@@ -6,7 +6,7 @@ import type { LanzerAgentRunResult, LanzerRunConfiguration } from '../src/acp/ru
 import { buildLanzerGenerationJobs, type LanzerGenerationJob } from '../src/campaign/jobs.js';
 import { resolveLanzerCampaign } from '../src/campaign/map.js';
 import { buildLanzerCampaignTask } from '../src/campaign/prompt.js';
-import { buildLanzerRunReport } from '../src/report/build.js';
+import { buildLanzerRunReport, buildLanzerSuiteReport } from '../src/report/build.js';
 import { renderLanzerRunSummary } from '../src/report/render.js';
 import type { LanzerCampaignValidationResult, LanzerDocumentIssue } from '../src/services/types.js';
 import { loadCampaignSpecs, miniCampaign } from './helpers.js';
@@ -176,5 +176,23 @@ describe('the agent\'s own validate checks in the run summary', () => {
     test('are not listed when every check passed', async () => {
         const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { toolCalls: [check(true, 0)] }), validation: verdict() });
         expect(renderLanzerRunSummary(report)).not.toContain('validate:');
+    });
+});
+
+describe('prompts in the suite report', () => {
+    test('are stored once per hash, and taken off the runs', async () => {
+        const fingerprint = { lanzerVersion: '0.0.1', grammars: [], promptHash: 'h1' };
+        const reports = await Promise.all([1, 2].map(() =>
+            buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob), validation: verdict(), fingerprint, prompt: 'Write <workspace>/main.mini.' })));
+        expect(reports[0].prompt).toBe('Write <workspace>/main.mini.');
+        const suite = buildLanzerSuiteReport(reports, 'now');
+        expect(suite.prompts).toEqual({ h1: 'Write <workspace>/main.mini.' });
+        expect(suite.runs.map((entry) => 'prompt' in entry)).toEqual([false, false]);
+        expect(suite.runs[0].fingerprint?.promptHash).toBe('h1');
+    });
+
+    test('are absent from a suite whose runs recorded none', async () => {
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob), validation: verdict() });
+        expect(buildLanzerSuiteReport([report], 'now')).not.toHaveProperty('prompts');
     });
 });

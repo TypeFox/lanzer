@@ -116,6 +116,27 @@ describe('compareLanzerSuiteReports', () => {
         ]);
     });
 
+    test('notices the host policy changing while the skill stays the same', () => {
+        const before = { ...FINGERPRINT, promptHash: 'p'.repeat(64), policyHash: 'q'.repeat(64) };
+        const after = { ...FINGERPRINT, promptHash: 'r'.repeat(64), policyHash: 's'.repeat(64) };
+        const comparison = compareLanzerSuiteReports(
+            suite(run('stack', undefined, { fingerprint: before })),
+            suite(run('stack', undefined, { fingerprint: after }))
+        );
+        expect(comparison.setup).toEqual([
+            { setting: 'host policy', a: ['q'.repeat(12)], b: ['s'.repeat(12)] },
+            { setting: 'prompt stack', a: ['p'.repeat(12)], b: ['r'.repeat(12)] }
+        ]);
+    });
+
+    test('notices one side running isolated', () => {
+        const comparison = compareLanzerSuiteReports(
+            suite(run('stack', undefined, { configuration: { ...CONFIGURATION, isolated: false } })),
+            suite(run('stack', undefined, { configuration: { ...CONFIGURATION, isolated: true } }))
+        );
+        expect(comparison.setup).toEqual([{ setting: 'isolated', a: ['no'], b: ['yes'] }]);
+    });
+
     test('notices a campaign file edited between the two reports', () => {
         const edited = { ...FINGERPRINT, campaign: { path: '/bench/stack.lanzer', hash: 'e'.repeat(64) } };
         const comparison = compareLanzerSuiteReports(suite(run('stack')), suite(run('stack', undefined, { fingerprint: edited })));

@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { collectLanzerCampaignFiles } from '../src/campaign/suite.js';
 import type { LanzerCampaignSpec } from '../src/campaign/model.js';
-import { fingerprintLanzerRun, getLanzerVersion, hashDirectory } from '../src/report/fingerprint.js';
+import { fingerprintLanzerRun, getLanzerVersion, hashDirectory, normalisePrompt } from '../src/report/fingerprint.js';
 
 let dir: string;
 
@@ -100,5 +100,34 @@ describe('collectLanzerCampaignFiles', () => {
         await mkdir(join(dir, 'empty'));
         await expect(collectLanzerCampaignFiles([join(dir, 'nope.lanzer')])).rejects.toThrow(/No such campaign file or folder/);
         await expect(collectLanzerCampaignFiles([join(dir, 'empty')])).rejects.toThrow(/No \.lanzer campaign files in/);
+    });
+});
+
+describe('the prompt and host policy in the fingerprint', () => {
+    const campaign: LanzerCampaignSpec = { name: 'c', imports: [], files: [], supportFiles: [], requirements: [], runs: [] };
+
+    test('are hashed when given, and left out when not', async () => {
+        const fingerprint = await fingerprintLanzerRun(campaign, undefined, { prompt: 'Write main.mini.', policy: { instructions: ['Be typed.'] } });
+        expect(fingerprint.promptHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(fingerprint.policyHash).toMatch(/^[0-9a-f]{64}$/);
+        const bare = await fingerprintLanzerRun(campaign, undefined);
+        expect(bare).not.toHaveProperty('promptHash');
+        expect(bare).not.toHaveProperty('policyHash');
+    });
+
+    test('hash the policy by content, not by key order', async () => {
+        const one = await fingerprintLanzerRun(campaign, undefined, { policy: { summary: 's', instructions: ['a', 'b'] } });
+        const other = await fingerprintLanzerRun(campaign, undefined, { policy: { instructions: ['a', 'b'], summary: 's', referenceFiles: undefined } });
+        const edited = await fingerprintLanzerRun(campaign, undefined, { policy: { summary: 's', instructions: ['a', 'c'] } });
+        expect(one.policyHash).toBe(other.policyHash);
+        expect(one.policyHash).not.toBe(edited.policyHash);
+    });
+
+    test('normalisePrompt replaces every mention of the workspace, so identical runs in different folders agree', () => {
+        const run1 = normalisePrompt('Write /runs/run-1/main.lox and read /runs/run-1/driver.lox.', '/runs/run-1');
+        const run2 = normalisePrompt('Write /runs/run-2/main.lox and read /runs/run-2/driver.lox.', '/runs/run-2');
+        expect(run1).toBe('Write <workspace>/main.lox and read <workspace>/driver.lox.');
+        expect(run2).toBe(run1);
+        expect(normalisePrompt('unchanged', undefined)).toBe('unchanged');
     });
 });

@@ -41,6 +41,8 @@ export interface BuildLanzerRunReportInput {
     failure?: { stage: LanzerRunStage; message: string };
     /** What the run measured, from {@link fingerprintLanzerRun}. */
     fingerprint?: LanzerRunFingerprint;
+    /** The prompt's text, normalised as its fingerprint hash was. */
+    prompt?: string;
 }
 
 async function describeFiles(jobs: LanzerGenerationJob[]): Promise<LanzerReportFile[]> {
@@ -147,6 +149,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         sessionId: run.sessionId,
         ...(run.configuration ? { configuration: run.configuration } : {}),
         ...(input.fingerprint ? { fingerprint: input.fingerprint } : {}),
+        ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
         files,
         issues: tallyIssues(validation),
         documents: (validation?.documents ?? []).map((document) => ({
@@ -214,5 +217,17 @@ export function summariseLanzerRuns(runs: LanzerRunReport[]): LanzerSuiteSummary
 }
 
 export function buildLanzerSuiteReport(runs: LanzerRunReport[], generatedAt: string): LanzerSuiteReport {
-    return { generatedAt, summary: summariseLanzerRuns(runs), runs };
+    // Each prompt once, under its hash: a suite of repeated runs sends the same prompt many times.
+    const prompts: Record<string, string> = {};
+    const stored = runs.map(({ prompt, ...run }) => {
+        const hash = run.fingerprint?.promptHash;
+        if (prompt !== undefined && hash) prompts[hash] = prompt;
+        return run;
+    });
+    return {
+        generatedAt,
+        summary: summariseLanzerRuns(stored),
+        runs: stored,
+        ...(Object.keys(prompts).length > 0 ? { prompts } : {})
+    };
 }

@@ -207,7 +207,9 @@ function describeSetup(run: LanzerRunReport): Record<string, string> {
         skill: !fingerprint ? notRecorded : skill ? `${skill.name ?? skill.path ?? '(unnamed)'} ${shortHash(skill.hash)}` : '(none)',
         'skill path': !fingerprint ? notRecorded : skill?.path ?? '(none)',
         grammars: fingerprint ? fingerprint.grammars.map((grammar) => `${grammar.path.split(/[\\/]/).pop()} ${shortHash(grammar.hash)}`).join(', ') : notRecorded,
-        'lanzer version': fingerprint?.lanzerVersion ?? notRecorded
+        'lanzer version': fingerprint?.lanzerVersion ?? notRecorded,
+        'host policy': fingerprint?.policyHash ? shortHash(fingerprint.policyHash) : !fingerprint?.promptHash ? notRecorded : '(none)',
+        isolated: configuration?.isolated === undefined ? notRecorded : configuration.isolated ? 'yes' : 'no'
     };
 }
 
@@ -230,6 +232,9 @@ function compareSetup(a: LanzerSuiteReport, b: LanzerSuiteReport): LanzerSetupDi
             for (const [setting, value] of Object.entries(describeSetup(run))) add(setting, value);
             const campaign = run.fingerprint?.campaign;
             add(`campaign ${run.campaign}`, campaign ? shortHash(campaign.hash) : '(not recorded)');
+            // Per campaign, like the file: the prompt carries the campaign's own text. A change here
+            // with the campaign file unchanged is the host's advice or Lanzer's template moving.
+            add(`prompt ${run.campaign}`, run.fingerprint?.promptHash ? shortHash(run.fingerprint.promptHash) : '(not recorded)');
         }
         return settings;
     };

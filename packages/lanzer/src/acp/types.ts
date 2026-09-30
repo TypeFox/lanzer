@@ -114,6 +114,16 @@ export interface RunLanzerAgentTaskOptions {
      * resolves. Extra files are reported either way — this decides whether they sink the run.
      */
     strictFileSet?: boolean;
+    /**
+     * Run the agent without the user's own setup: for Claude, no user, project or local settings,
+     * so no `CLAUDE.md` or `AGENTS.md` instructions (Claude loads the latter where a project has no
+     * `CLAUDE.md`), installed skills, hooks or plugins beyond what Lanzer passes.
+     *
+     * Off by default. For real generation a user wants their own setup used; a benchmark wants the
+     * skill under test to be the only one the agent sees. Codex offers no such switch here, and it
+     * reads `AGENTS.md` regardless, so a Codex run that asks for it is recorded as not isolated.
+     */
+    isolated?: boolean;
     validate?: () => Promise<LanzerAgentValidationResult>;
     /**
      * If set, RecordingClient echoes a per-event progress line to `progressStream`
@@ -155,6 +165,11 @@ export interface LanzerRunConfiguration {
     toolAllowlist?: string[];
     fixIterations: number;
     retryIterations: number;
+    /**
+     * Whether the agent ran without the user's own setup. False when it was not asked for, and when
+     * it was but the transport cannot do it (Codex). Absent in reports from before it existed.
+     */
+    isolated?: boolean;
 }
 
 export interface LanzerAgentRunResult {

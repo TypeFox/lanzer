@@ -16,7 +16,8 @@ import {
 import { formatLanzerIssue } from '../acp/issues.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
-import { fingerprintLanzerRun } from '../report/fingerprint.js';
+import { fingerprintLanzerRun, normalisePrompt } from '../report/fingerprint.js';
+import { getCampaignWorkspaceRoot } from '../campaign/paths.js';
 import { findUnknownDiagnosticCodes } from '../validations/diagnostic-validations.js';
 import type { LanzerCampaignValidationResult } from './types.js';
 import { readFile } from 'node:fs/promises';
@@ -54,6 +55,8 @@ export interface LanzerAcpOptions {
     retryIterations?: number;
     /** What the agent may do, by ACP tool kind. Defaults to the generation baseline. */
     permissions?: LanzerPermissionPolicy;
+    /** Run without the user's own agent setup. See `RunLanzerAgentTaskOptions.isolated`. */
+    isolated?: boolean;
     /** Progress streaming for the run. */
     progress?: {
         label?: string;
@@ -141,8 +144,11 @@ export async function runLanzerCampaign(
 ): Promise<LanzerAgentRunResult> {
     const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, deps.service);
     // Taken before the agent starts: the skill and grammars are what the agent was given, and it
-    // is not meant to change them.
-    const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill);
+    // is not meant to change them. The prompt is built as `previewLanzerCampaignTask` builds it,
+    // which a test holds equal to the one the run sends.
+    const tools = lanzerTransportServesTools(acp) ? LANZER_TOOL_PROMPT_NAMES : undefined;
+    const prompt = normalisePrompt(buildLanzerCampaignTask(jobs, policy, dslSkill, tools).prompt, getCampaignWorkspaceRoot(resolved.campaign));
+    const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill, { prompt, policy });
 
     // The agent gets the campaign runner itself, not a copy of it. `validate` below flattens the
     // same result into the strings a fix prompt needs; the toolkit hands over the structured form.
@@ -207,6 +213,7 @@ export async function runLanzerCampaign(
         fixIterations: acp.fixIterations,
         retryIterations: acp.retryIterations,
         permissions: acp.permissions,
+        isolated: acp.isolated,
         readOnlyDirectories,
         toolkit,
         policy,
@@ -250,7 +257,8 @@ export async function runLanzerCampaign(
             run: failed,
             failure: { stage: error.stage, message: error.message },
             ok: false,
-            fingerprint
+            fingerprint,
+            prompt
         });
         return failed;
     }
@@ -272,7 +280,8 @@ export async function runLanzerCampaign(
         fileSetIssues,
         extraFiles: run.extraFiles,
         ok: run.validation?.ok,
-        fingerprint
+        fingerprint,
+        prompt
     });
     return run;
 }
@@ -286,6 +295,7 @@ export async function runLanzerCampaign(
  * - `LANZER_ACP_PROVIDER`, `LANZER_ACP_MODEL`, `LANZER_ACP_EFFORT`
  * - `LANZER_ACP_MAX_ATTEMPTS` (integer, default 2)
  * - `LANZER_ACP_ALLOW` (comma-separated ACP tool kinds, or `all`)
+ * - `LANZER_ACP_ISOLATED` (`1` or `true` to run without the user's own agent setup)
  *
  * `LANZER_ACP_ALLOW` is read literally: naming any kind means the run is limited to exactly
  * those, so widening and narrowing use the same one setting. Leaving it out is what selects the
@@ -315,6 +325,7 @@ export function resolveAcpOptionsFromEnv(overrides: Partial<LanzerAcpOptions> = 
         effort: env.LANZER_ACP_EFFORT,
         maxAttempts: Number.isFinite(maxAttempts) ? maxAttempts : undefined,
         permissions: resolvePermissionPolicy(env.LANZER_ACP_ALLOW),
+        ...(env.LANZER_ACP_ISOLATED === '1' || env.LANZER_ACP_ISOLATED?.toLowerCase() === 'true' ? { isolated: true } : {}),
         ...overrides
     };
 }

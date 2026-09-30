@@ -157,6 +157,18 @@ describe('the session permission mode', () => {
         expect(meta.claudeCode.options).not.toHaveProperty('permissionMode');
     });
 
+    test('an isolated run tells Claude to load none of the user\'s settings, and says so', async () => {
+        const { meta, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES }, isolated: true });
+        expect(meta.claudeCode.options.settingSources).toEqual([]);
+        expect(configuration?.isolated).toBe(true);
+    });
+
+    test('a run is not isolated unless asked, and leaves Claude\'s settings alone', async () => {
+        const { meta, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
+        expect(meta.claudeCode.options).not.toHaveProperty('settingSources');
+        expect(configuration?.isolated).toBe(false);
+    });
+
     test('a read-only run stays in default, which asks', async () => {
         const { modes, configuration } = await sessionSetup({
             env: { FAKE_AGENT_MODES: JSON.stringify(['auto', 'default', 'acceptEdits']) },
@@ -190,7 +202,8 @@ describe('the session permission mode', () => {
             allowedToolKinds: ['edit', 'other', 'read', 'search', 'think'],
             toolAllowlist: expect.arrayContaining(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill']),
             fixIterations: 1,
-            retryIterations: 2
+            retryIterations: 2,
+            isolated: false
         });
         // The fake agent offers no modes here, so there is no mode to record.
         expect(configuration).not.toHaveProperty('permissionMode');
@@ -361,6 +374,12 @@ describe('the Codex MCP transport', () => {
         });
         return { run, prompts };
     }
+
+    test('records a run that asked for isolation as not isolated: Codex has no such switch', async () => {
+        const { run } = await runFakeCodex([[{ path: job.absoluteOutputPath, content: 'fn main() { return; }' }]], async () => ({ ok: true, issues: [] }), { isolated: true });
+        expect(run.configuration?.transport).toBe('codex-mcp');
+        expect(run.configuration?.isolated).toBe(false);
+    });
 
     test('runs the same attempt loop: log, file set, token totals, and a fix prompt that carries the task', async () => {
         let validations = 0;

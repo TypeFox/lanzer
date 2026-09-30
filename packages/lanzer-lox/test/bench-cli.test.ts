@@ -129,9 +129,38 @@ describe('the fingerprint in the report', () => {
             lanzerVersion: expect.stringMatching(/^\d+\.\d+\.\d+/),
             skill: { name: 'write-lox', path: WRITE_LOX, hash: await hashDirectory(WRITE_LOX) },
             grammars: [{ path: LOX_GRAMMAR, hash: expect.stringMatching(/^[0-9a-f]{64}$/) }],
-            campaign: { path: join(suiteDir, 'alpha.lanzer'), hash: expect.stringMatching(/^[0-9a-f]{64}$/) }
+            campaign: { path: join(suiteDir, 'alpha.lanzer'), hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+            promptHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+            policyHash: expect.stringMatching(/^[0-9a-f]{64}$/)
         });
         expect(run.configuration?.agent).toEqual({ name: 'fake-agent', version: '1.2.3' });
+    });
+
+    test('stores the prompt once, with the workspace path left out, however many runs share it', async () => {
+        const report = join(dir, 'report.json');
+        await generate('print 1;', report, join(suiteDir, 'alpha.lanzer'), '--runs', '2');
+        const suite = await readSuite(report);
+        const [first, second] = suite.runs;
+        // Each run had its own workspace folder, yet both were sent the same prompt.
+        expect(first.repetition?.workspace).not.toBe(second.repetition?.workspace);
+        expect(first.fingerprint?.promptHash).toBe(second.fingerprint?.promptHash);
+        const prompt = suite.prompts?.[first.fingerprint?.promptHash ?? ''];
+        expect(Object.keys(suite.prompts ?? {})).toHaveLength(1);
+        expect(prompt).toContain('<workspace>/main.lox');
+        expect(prompt).not.toContain(first.repetition?.workspace ?? '');
+        expect(first).not.toHaveProperty('prompt');
+    });
+
+    test('--isolated is recorded in the configuration, and in compare when only one side had it', async () => {
+        const plain = join(dir, 'plain.json');
+        const isolated = join(dir, 'isolated.json');
+        await generate('print 1;', plain, join(suiteDir, 'alpha.lanzer'));
+        await generate('print 1;', isolated, join(suiteDir, 'alpha.lanzer'), '--isolated');
+        expect((await readSuite(plain)).runs[0].configuration?.isolated).toBe(false);
+        expect((await readSuite(isolated)).runs[0].configuration?.isolated).toBe(true);
+        vi.mocked(console.log).mockClear();
+        await cli('compare', plain, isolated);
+        expect(printed()).toContain('isolated: no → yes');
     });
 
     test('--skill points the run at another skill folder, and its hash says it differs', async () => {

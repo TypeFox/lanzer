@@ -24,6 +24,8 @@ export function describeRunConfiguration(
         allowedToolKinds: [...permissions.allowed].sort(),
         ...(tools ? { toolAllowlist: tools } : {}),
         fixIterations,
-        retryIterations
+        retryIterations,
+        // Only Claude's adapter takes the setting; asked of Codex, the run is honestly not isolated.
+        isolated: transport === 'acp' && options.isolated === true
     };
 }
