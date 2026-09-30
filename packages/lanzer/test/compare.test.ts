@@ -156,13 +156,75 @@ describe('failed checks during the run', () => {
         expect(math?.change).toBe('unchanged');
     });
 
-    test('are shown under a campaign when either side had any, and not otherwise', () => {
+    test('get a column, one entry per run, when any run of either side had one', () => {
         const text = renderLanzerSuiteComparison(compareLanzerSuiteReports(
             suite(struggled('math', 8), struggled('stack', 0)),
             suite(struggled('math', 0), struggled('stack', 0))
         ));
-        expect(text).toMatch(/math\s+1\/1 → 1\/1  unchanged, ±0 pts\n\s+failed checks per run: 8 → 0/);
-        expect(text).not.toMatch(/stack.*\n\s+failed checks/);
+        expect(text).toMatch(/campaign\s+a\s+b\s+change\s+failed checks per run/);
+        expect(text).toMatch(/math\s+1\/1\s+1\/1\s+unchanged ±0 pts\s+8 → 0/);
+        expect(text).toMatch(/stack\s+1\/1\s+1\/1\s+unchanged ±0 pts\s+0 → 0/);
+    });
+
+    test('get no column when no run had one', () => {
+        const text = renderLanzerSuiteComparison(compareLanzerSuiteReports(suite(struggled('stack', 0)), suite(struggled('stack', 0))));
+        expect(text).not.toContain('failed checks');
+    });
+});
+
+describe('cost, time and tokens per campaign', () => {
+    /** A run of `campaign` that took `seconds` and cost `cost`. */
+    const timed = (campaign: string, seconds: number, cost: number, stage?: LanzerRunStage) =>
+        run(campaign, stage, { durationMs: seconds * 1000, usage: { ...run('x').usage, costAmount: cost, totalTokens: seconds * 1000 } });
+
+    test('are given per run as mean and sample standard deviation', () => {
+        const comparison = compareLanzerSuiteReports(
+            suite(timed('math', 10, 0.1), timed('math', 30, 0.3), timed('stack', 5, 0.05)),
+            suite(timed('math', 20, 0.2), timed('math', 20, 0.2), timed('stack', 5, 0.05))
+        );
+        const math = comparison.campaigns.find((campaign) => campaign.campaign === 'math');
+        expect(math?.a?.durationMsPerRun.mean).toBe(20_000);
+        expect(math?.a?.durationMsPerRun.stddev).toBeCloseTo(Math.SQRT2 * 10_000);
+        expect(math?.a?.costPerRun?.mean).toBeCloseTo(0.2);
+        // Same mean, no spread: the totals alone would call these two sides identical.
+        expect(math?.b?.durationMsPerRun).toEqual({ mean: 20_000, stddev: 0 });
+        expect(math?.b?.tokensPerRun).toEqual({ mean: 20_000, stddev: 0 });
+    });
+
+    test('have no spread for a single run, and no cost when none was reported', () => {
+        const unpriced = run('stack', undefined, { usage: { ...run('x').usage, costAmount: undefined } });
+        const [stack] = compareLanzerSuiteReports(suite(unpriced), suite(unpriced)).campaigns;
+        expect(stack.a?.durationMsPerRun).toEqual({ mean: 10_000, stddev: 0 });
+        expect(stack.a).not.toHaveProperty('costPerRun');
+    });
+
+    test('are printed as a table, one row per campaign', () => {
+        const text = renderLanzerSuiteComparison(compareLanzerSuiteReports(
+            suite(timed('math', 10, 0.1), timed('math', 30, 0.3)),
+            suite(timed('math', 20, 0.2), timed('math', 20, 0.2))
+        ));
+        expect(text).toContain('per run, by campaign (mean ± sd):');
+        expect(text).toMatch(/math\s+0\.200 ± 0\.141\s+0\.200 ± 0\.000\s+20\.0s ± 14\.1s\s+20\.0s ± 0\.0s\s+20k ± 14k\s+20k ± 0k/);
+    });
+});
+
+describe('flaky campaigns', () => {
+    test('are those whose runs split between pass and fail, on either side', () => {
+        const comparison = compareLanzerSuiteReports(
+            suite(run('math'), run('math', 'syntax'), run('stack'), run('stack')),
+            suite(run('math'), run('math'), run('stack', 'syntax'), run('stack', 'syntax'))
+        );
+        const flaky = Object.fromEntries(comparison.campaigns.map((campaign) => [campaign.campaign, [campaign.a?.flaky, campaign.b?.flaky]]));
+        // Always failing is not flaky: the runs agree.
+        expect(flaky).toEqual({ math: [true, false], stack: [false, false] });
+        const text = renderLanzerSuiteComparison(comparison);
+        const section = text.slice(text.indexOf('flaky —')).split('\n\n')[0];
+        expect(section).toContain('  math: a 1/2 (1× syntax)');
+        expect(section).not.toContain('stack');
+    });
+
+    test('get no section when every campaign\'s runs agree', () => {
+        expect(renderLanzerSuiteComparison(compareLanzerSuiteReports(suite(run('math')), suite(run('math', 'syntax'))))).not.toContain('flaky');
     });
 });
 
@@ -173,11 +235,13 @@ describe('renderLanzerSuiteComparison', () => {
         const b = suite(run('stack', undefined, { fingerprint: newSkill }), run('math', undefined, { fingerprint: newSkill }));
         const text = renderLanzerSuiteComparison(compareLanzerSuiteReports(a, b), { a: 'v1.json', b: 'v2.json' });
         expect(text).toContain(`skill: write-lox ${'a'.repeat(12)} → write-lox ${'d'.repeat(12)}`);
-        expect(text).toContain('pass rate: 1/2 (50%) → 2/2 (100%), +50 pts on shared campaigns');
-        expect(text).toContain('cost per run: 0.1000 USD → 0.1000 USD (±0%)');
-        expect(text).toMatch(/stack\s+0\/1 \(1× syntax\) → 1\/1  improved, \+100 pts/);
-        expect(text).toContain('syntax        1 (50%) → 0 (0%)');
-        expect(text).toContain('LOX_PARSER_ERROR: 1.00 → 0.00');
+        expect(text).toMatch(/pass rate\s+1\/2 \(50%\)\s+2\/2 \(100%\)\s+\+50 pts/);
+        expect(text).toMatch(/cost per run\s+0\.1000 USD\s+0\.1000 USD\s+±0%/);
+        expect(text).toMatch(/stack\s+0\/1 \(1× syntax\)\s+1\/1\s+improved \+100 pts/);
+        expect(text).toMatch(/syntax\s+1 \(50%\)\s+0 \(0%\)/);
+        expect(text).toMatch(/LOX_PARSER_ERROR\s+1\.00\s+0\.00/);
+        // Both reports ran the same campaigns, so the headline needs no caveat.
+        expect(text).not.toContain('counts only the campaigns both reports ran');
         expect(text).toContain('rerun both setups with --runs');
     });
 

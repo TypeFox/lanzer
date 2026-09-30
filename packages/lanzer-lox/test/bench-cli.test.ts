@@ -164,8 +164,8 @@ describe('compare', () => {
         expect(await cli('compare', before, after)).toBeUndefined();
         const text = printed();
         expect(text).toContain('the same in both');
-        expect(text).toContain('pass rate: 0/2 (0%) → 2/2 (100%), +100 pts on shared campaigns');
-        expect(text).toMatch(/alpha\s+0\/1 \(1× semantics\) → 1\/1  improved/);
+        expect(text).toMatch(/pass rate\s+0\/2 \(0%\)\s+2\/2 \(100%\)\s+\+100 pts/);
+        expect(text).toMatch(/alpha\s+0\/1 \(1× semantics\)\s+1\/1\s+improved \+100 pts/);
         expect(text).toContain('small samples');
     });
 

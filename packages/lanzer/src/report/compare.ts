@@ -31,6 +31,24 @@ export interface LanzerCampaignSide {
      * mistakes before the verdict, so two setups with the same pass rate can differ only here.
      */
     failedChecks: number[];
+    /** Absent when no run of the campaign reported a cost. */
+    costPerRun?: LanzerSpread;
+    durationMsPerRun: LanzerSpread;
+    tokensPerRun: LanzerSpread;
+    /**
+     * Some runs passed and some failed. Identical runs disagreeing means the campaign's
+     * instructions or checks leave room for chance, and its pass rate is a coin weighted by it.
+     */
+    flaky: boolean;
+}
+
+/**
+ * A mean and how far single runs stray from it: the sample standard deviation, 0 for one run. A
+ * total alone cannot tell three similar runs from one expensive run and two cheap ones.
+ */
+export interface LanzerSpread {
+    mean: number;
+    stddev: number;
 }
 
 /** One side's totals, per run where a sum would reward whichever side ran more. */
@@ -89,26 +107,57 @@ function describeSide(report: LanzerSuiteReport): LanzerSuiteSide {
     };
 }
 
-/** Failed `validate` calls per run of each campaign, in run order. */
-function failedChecksByCampaign(report: LanzerSuiteReport): Record<string, number[]> {
-    const byCampaign: Record<string, number[]> = {};
+/** What each run of a campaign cost and how it went, in run order. */
+interface CampaignRuns {
+    failedChecks: number[];
+    costs: number[];
+    durations: number[];
+    tokens: number[];
+}
+
+/** Each campaign's runs, measured one by one, in run order. */
+function runsByCampaign(report: LanzerSuiteReport): Record<string, CampaignRuns> {
+    const byCampaign: Record<string, CampaignRuns> = {};
     for (const run of report.runs) {
-        const failed = run.toolCalls.filter((call) => call.tool === 'validate' && !call.ok).length;
-        (byCampaign[run.campaign] ??= []).push(failed);
+        const runs = (byCampaign[run.campaign] ??= { failedChecks: [], costs: [], durations: [], tokens: [] });
+        runs.failedChecks.push(run.toolCalls.filter((call) => call.tool === 'validate' && !call.ok).length);
+        if (run.usage.costAmount !== undefined) runs.costs.push(run.usage.costAmount);
+        runs.durations.push(run.durationMs);
+        runs.tokens.push(run.usage.totalTokens);
     }
     return byCampaign;
+}
+
+/** Mean and sample standard deviation; one value has no spread, and none gives zeroes. */
+export function spreadOf(values: number[]): LanzerSpread {
+    if (values.length === 0) return { mean: 0, stddev: 0 };
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    if (values.length === 1) return { mean, stddev: 0 };
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
+    return { mean, stddev: Math.sqrt(variance) };
+}
+
+function describeCampaignSide(counts: LanzerSuiteReport['summary']['byCampaign'][string], runs: CampaignRuns | undefined): LanzerCampaignSide {
+    const measured = runs ?? { failedChecks: [], costs: [], durations: [], tokens: [] };
+    return {
+        ...counts,
+        passRate: counts.total === 0 ? 0 : counts.succeeded / counts.total,
+        failedChecks: measured.failedChecks,
+        ...(measured.costs.length > 0 ? { costPerRun: spreadOf(measured.costs) } : {}),
+        durationMsPerRun: spreadOf(measured.durations),
+        tokensPerRun: spreadOf(measured.tokens),
+        flaky: counts.succeeded > 0 && counts.succeeded < counts.total
+    };
 }
 
 function compareCampaign(
     campaign: string,
     a: LanzerSuiteReport['summary']['byCampaign'][string] | undefined,
     b: LanzerSuiteReport['summary']['byCampaign'][string] | undefined,
-    failedChecks: { a: number[]; b: number[] }
+    runs: { a: CampaignRuns | undefined; b: CampaignRuns | undefined }
 ): LanzerCampaignComparison {
-    const side = (counts: typeof a, checks: number[]): LanzerCampaignSide | undefined =>
-        counts && { ...counts, passRate: counts.total === 0 ? 0 : counts.succeeded / counts.total, failedChecks: checks };
-    const sideA = side(a, failedChecks.a);
-    const sideB = side(b, failedChecks.b);
+    const sideA = a && describeCampaignSide(a, runs.a);
+    const sideB = b && describeCampaignSide(b, runs.b);
     if (!sideA || !sideB) {
         return { campaign, change: sideA ? 'removed' : 'added', ...(sideA ? { a: sideA } : {}), ...(sideB ? { b: sideB } : {}) };
     }
@@ -208,10 +257,10 @@ export function compareLanzerSuiteReports(a: LanzerSuiteReport, b: LanzerSuiteRe
     const sideA = describeSide(a);
     const sideB = describeSide(b);
     const names = Array.from(new Set([...Object.keys(a.summary.byCampaign), ...Object.keys(b.summary.byCampaign)])).sort();
-    const checksA = failedChecksByCampaign(a);
-    const checksB = failedChecksByCampaign(b);
+    const runsA = runsByCampaign(a);
+    const runsB = runsByCampaign(b);
     const campaigns = names.map((name) =>
-        compareCampaign(name, a.summary.byCampaign[name], b.summary.byCampaign[name], { a: checksA[name] ?? [], b: checksB[name] ?? [] }));
+        compareCampaign(name, a.summary.byCampaign[name], b.summary.byCampaign[name], { a: runsA[name], b: runsB[name] }));
 
     // Over the campaigns both ran: a campaign added to the suite is not the setup getting better.
     const shared = campaigns.filter((campaign) => campaign.a && campaign.b);
@@ -270,10 +319,11 @@ function signedPoints(delta: number): string {
     return `${points > 0 ? '+' : points < 0 ? '−' : '±'}${Math.abs(points)} pts`;
 }
 
-function formatRatio(from: number, to: number, format: (n: number) => string): string {
-    if (from === 0) return `${format(from)} → ${format(to)}`;
+/** `to` against `from` in percent, signed; empty when `from` is zero and a ratio means nothing. */
+function relativeChange(from: number, to: number): string {
+    if (from === 0) return '';
     const change = Math.round(((to - from) / from) * 100);
-    return `${format(from)} → ${format(to)} (${change > 0 ? '+' : change < 0 ? '−' : '±'}${Math.abs(change)}%)`;
+    return `${change > 0 ? '+' : change < 0 ? '−' : '±'}${Math.abs(change)}%`;
 }
 
 function formatSeconds(ms: number): string {
@@ -283,6 +333,23 @@ function formatSeconds(ms: number): string {
 function formatStages(byStage: Partial<Record<LanzerRunStage, number>> | undefined): string {
     const entries = Object.entries(byStage ?? {});
     return entries.length === 0 ? '' : ` (${entries.map(([stage, count]) => `${count}× ${stage}`).join(', ')})`;
+}
+
+/**
+ * Rows as aligned columns, two spaces apart, the first row a header. `right` names the columns
+ * holding numbers, which read best right-aligned. Any number of columns, so a comparison of more
+ * than two reports needs no other layout.
+ */
+function renderTable(rows: string[][], right: ReadonlySet<number> = new Set()): string[] {
+    const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => (row[column] ?? '').length)));
+    return rows.map((row) =>
+        `  ${row.map((cell, column) => (right.has(column) ? cell.padStart(widths[column]) : cell.padEnd(widths[column]))).join('  ')}`.trimEnd()
+    );
+}
+
+/** A spread as `mean ± sd`, in one unit. */
+function formatSpread(spread: LanzerSpread | undefined, format: (n: number) => string): string {
+    return spread ? `${format(spread.mean)} ± ${format(spread.stddev)}` : '—';
 }
 
 /** The comparison as the block `compare` prints: `a` is the baseline, `b` the candidate. */
@@ -302,47 +369,87 @@ export function renderLanzerSuiteComparison(comparison: LanzerSuiteComparison, l
     }
     lines.push('');
 
-    lines.push(`pass rate: ${a.succeeded}/${a.runs} (${percent(a.passRate)}) → ${b.succeeded}/${b.runs} (${percent(b.passRate)}), ${signedPoints(comparison.passRateDelta)} on shared campaigns`);
+    const currency = b.costCurrency ?? a.costCurrency ?? '';
+    const cost = (n: number | undefined) => (n === undefined ? '(not reported)' : `${n.toFixed(4)} ${currency}`.trim());
+    const tokens = (n: number) => Math.round(n).toLocaleString('en-US');
+    const perRun: string[][] = [
+        ['', 'a', 'b', 'change'],
+        ['pass rate', `${a.succeeded}/${a.runs} (${percent(a.passRate)})`, `${b.succeeded}/${b.runs} (${percent(b.passRate)})`, signedPoints(comparison.passRateDelta)]
+    ];
     if (a.costPerRun !== undefined || b.costPerRun !== undefined) {
-        const currency = b.costCurrency ?? a.costCurrency ?? '';
-        const cost = (n: number | undefined) => (n === undefined ? '(not reported)' : `${n.toFixed(4)} ${currency}`.trim());
-        lines.push(`cost per run: ${a.costPerRun !== undefined && b.costPerRun !== undefined ? formatRatio(a.costPerRun, b.costPerRun, cost) : `${cost(a.costPerRun)} → ${cost(b.costPerRun)}`}`);
+        perRun.push(['cost per run', cost(a.costPerRun), cost(b.costPerRun), a.costPerRun !== undefined && b.costPerRun !== undefined ? relativeChange(a.costPerRun, b.costPerRun) : '']);
     }
-    lines.push(`time per run: ${formatRatio(a.durationMsPerRun, b.durationMsPerRun, formatSeconds)}`);
-    lines.push(`tokens per run: ${formatRatio(a.tokensPerRun, b.tokensPerRun, (n) => Math.round(n).toLocaleString('en-US'))}`);
+    perRun.push(['time per run', formatSeconds(a.durationMsPerRun), formatSeconds(b.durationMsPerRun), relativeChange(a.durationMsPerRun, b.durationMsPerRun)]);
+    perRun.push(['tokens per run', tokens(a.tokensPerRun), tokens(b.tokensPerRun), relativeChange(a.tokensPerRun, b.tokensPerRun)]);
+    lines.push(...renderTable(perRun, new Set([1, 2, 3])));
+    // Said only when it matters: a campaign one side ran alone would otherwise move the headline.
+    if (comparison.campaigns.some((campaign) => !campaign.a || !campaign.b)) {
+        lines.push('  the pass-rate change counts only the campaigns both reports ran');
+    }
     lines.push('');
 
     lines.push('by campaign:');
-    const width = Math.max(...comparison.campaigns.map((campaign) => campaign.campaign.length), 0);
+    const outcome = (counts: LanzerCampaignComparison['a']) => (counts ? `${counts.succeeded}/${counts.total}${formatStages(counts.byStage)}` : '—');
+    const checks = (counts: LanzerCampaignComparison['a']) => (counts ? counts.failedChecks.join(',') || '—' : '—');
+    // Per run rather than summed: one run with 14 failed checks and two with none is a different
+    // story from three runs with five each. The column is left out when no run had any.
+    const showChecks = comparison.campaigns.some((campaign) =>
+        [...(campaign.a?.failedChecks ?? []), ...(campaign.b?.failedChecks ?? [])].some((count) => count > 0));
+    const outcomes: string[][] = [['campaign', 'a', 'b', 'change', ...(showChecks ? ['failed checks per run'] : [])]];
     for (const campaign of comparison.campaigns) {
-        const side = (counts: LanzerCampaignComparison['a']) => (counts ? `${counts.succeeded}/${counts.total}${formatStages(counts.byStage)}` : '—');
-        const delta = campaign.passRateDelta !== undefined ? `, ${signedPoints(campaign.passRateDelta)}` : '';
-        lines.push(`  ${campaign.campaign.padEnd(width)}  ${side(campaign.a)} → ${side(campaign.b)}  ${campaign.change}${delta}`);
-        // Per run rather than summed: one run with 14 failed checks and two with none is a
-        // different story from three runs with five each.
-        const checks = (counts: LanzerCampaignComparison['a']) => (counts ? counts.failedChecks.join(',') || '—' : '—');
-        if ([...(campaign.a?.failedChecks ?? []), ...(campaign.b?.failedChecks ?? [])].some((count) => count > 0)) {
-            lines.push(`  ${''.padEnd(width)}  failed checks per run: ${checks(campaign.a)} → ${checks(campaign.b)}`);
-        }
+        const change = campaign.passRateDelta !== undefined ? `${campaign.change} ${signedPoints(campaign.passRateDelta)}` : campaign.change;
+        outcomes.push([campaign.campaign, outcome(campaign.a), outcome(campaign.b), change, ...(showChecks ? [`${checks(campaign.a)} → ${checks(campaign.b)}`] : [])]);
     }
+    lines.push(...renderTable(outcomes));
+    lines.push('');
+
+    lines.push('per run, by campaign (mean ± sd):');
+    const costs: string[][] = [['campaign', 'cost a', 'cost b', 'time a', 'time b', 'tokens a', 'tokens b']];
+    const money = (n: number) => n.toFixed(3);
+    const seconds = (n: number) => `${(n / 1000).toFixed(1)}s`;
+    const thousands = (n: number) => `${Math.round(n / 1000)}k`;
+    for (const campaign of comparison.campaigns) {
+        costs.push([
+            campaign.campaign,
+            formatSpread(campaign.a?.costPerRun, money),
+            formatSpread(campaign.b?.costPerRun, money),
+            formatSpread(campaign.a?.durationMsPerRun, seconds),
+            formatSpread(campaign.b?.durationMsPerRun, seconds),
+            formatSpread(campaign.a?.tokensPerRun, thousands),
+            formatSpread(campaign.b?.tokensPerRun, thousands)
+        ]);
+    }
+    lines.push(...renderTable(costs, new Set([1, 2, 3, 4, 5, 6])));
 
     const stages = comparison.stages.filter((stage) => stage.a > 0 || stage.b > 0);
     if (stages.length > 0) {
         lines.push('');
-        lines.push('failures by stage (per run):');
-        for (const stage of stages) {
-            lines.push(`  ${stage.name.padEnd(12)}  ${stage.a} (${percent(stage.aPerRun)}) → ${stage.b} (${percent(stage.bPerRun)})`);
-        }
+        lines.push('failures by stage (share of runs):');
+        lines.push(...renderTable([
+            ['stage', 'a', 'b'],
+            ...stages.map((stage) => [stage.name, `${stage.a} (${percent(stage.aPerRun)})`, `${stage.b} (${percent(stage.bPerRun)})`])
+        ], new Set([1, 2])));
     }
 
     const codes = comparison.codes.filter((code) => code.a !== code.b);
     if (codes.length > 0) {
         lines.push('');
         lines.push('diagnostic codes that moved (occurrences per run):');
-        for (const code of codes.slice(0, MAX_LISTED_CODES)) {
-            lines.push(`  ${code.name}: ${code.aPerRun.toFixed(2)} → ${code.bPerRun.toFixed(2)}`);
-        }
+        lines.push(...renderTable([
+            ['code', 'a', 'b'],
+            ...codes.slice(0, MAX_LISTED_CODES).map((code) => [code.name, code.aPerRun.toFixed(2), code.bPerRun.toFixed(2)])
+        ], new Set([1, 2])));
         if (codes.length > MAX_LISTED_CODES) lines.push(`  … ${codes.length - MAX_LISTED_CODES} more (see --json)`);
+    }
+
+    const flaky = comparison.campaigns.filter((campaign) => campaign.a?.flaky || campaign.b?.flaky);
+    if (flaky.length > 0) {
+        lines.push('');
+        lines.push('flaky — identical runs split between pass and fail, so chance moves these pass rates:');
+        for (const campaign of flaky) {
+            const sides = [campaign.a?.flaky ? `a ${outcome(campaign.a)}` : '', campaign.b?.flaky ? `b ${outcome(campaign.b)}` : ''].filter(Boolean);
+            lines.push(`  ${campaign.campaign}: ${sides.join(', ')}`);
+        }
     }
 
     if (comparison.smallSamples.length > 0) {

@@ -329,27 +329,45 @@ difference first, then the numbers (these are illustrative):
 setup:
   skill: write-lox ed17db57ba69 → write-lox 4c1d9e0a7b22
 
-pass rate: 17/25 (68%) → 22/25 (88%), +20 pts on shared campaigns
-cost per run: 0.2220 USD → 0.2300 USD (+4%)
-time per run: 40.0s → 40.0s (±0%)
-tokens per run: 52,000 → 52,000 (±0%)
+                            a            b   change
+  pass rate       17/25 (68%)  22/25 (88%)  +20 pts
+  cost per run     0.2209 USD   0.2301 USD      +4%
+  time per run          39.8s        40.1s      +1%
+  tokens per run       52,380       52,560      ±0%
 
 by campaign:
-  higherOrder       5/5 → 5/5  unchanged, ±0 pts
-  integerMath       2/5 (2× syntax, 1× semantics) → 4/5 (1× semantics)  improved, +40 pts
-  linkedStack       4/5 (1× behaviour) → 4/5 (1× behaviour)  unchanged, ±0 pts
-  negativeSubclass  2/5 (3× diagnostics) → 4/5 (1× diagnostics)  improved, +40 pts
-  shapes            4/5 (1× semantics) → 5/5  improved, +20 pts
+  campaign          a                              b                     change            failed checks per run
+  higherOrder       5/5                            5/5                   unchanged ±0 pts  0,0,0,1,3 → 0,0,1,0,3
+  integerMath       2/5 (2× syntax, 1× semantics)  4/5 (1× semantics)    improved +40 pts  0,0,1,0,3 → 0,1,0,0,3
+  linkedStack       4/5 (1× behaviour)             4/5 (1× behaviour)    unchanged ±0 pts  0,1,0,0,3 → 1,0,0,0,3
+  negativeSubclass  2/5 (3× diagnostics)           4/5 (1× diagnostics)  improved +40 pts  1,0,0,0,3 → 0,0,0,1,3
+  shapes            4/5 (1× semantics)             5/5                   improved +20 pts  0,0,0,1,3 → 0,0,1,0,3
 
-failures by stage (per run):
-  syntax        2 (8%) → 0 (0%)
-  semantics     2 (8%) → 1 (4%)
-  diagnostics   3 (12%) → 1 (4%)
-  behaviour     1 (4%) → 1 (4%)
+per run, by campaign (mean ± sd):
+  campaign                 cost a         cost b        time a        time b  tokens a  tokens b
+  higherOrder       0.213 ± 0.020  0.229 ± 0.021  40.8s ± 6.4s  42.8s ± 6.4s  53k ± 5k  55k ± 5k
+  integerMath       0.244 ± 0.023  0.245 ± 0.024  41.2s ± 6.4s  38.8s ± 6.4s  53k ± 5k  52k ± 5k
+  linkedStack       0.249 ± 0.025  0.267 ± 0.026  37.2s ± 6.4s  39.2s ± 6.4s  50k ± 5k  52k ± 5k
+  negativeSubclass  0.185 ± 0.019  0.189 ± 0.022  42.0s ± 7.1s  39.6s ± 7.7s  54k ± 5k  52k ± 6k
+  shapes            0.213 ± 0.023  0.220 ± 0.023  38.0s ± 7.1s  40.0s ± 7.1s  51k ± 5k  53k ± 5k
+
+failures by stage (share of runs):
+  stage              a       b
+  syntax        2 (8%)  0 (0%)
+  semantics     2 (8%)  1 (4%)
+  diagnostics  3 (12%)  1 (4%)
+  behaviour     1 (4%)  1 (4%)
 
 diagnostic codes that moved (occurrences per run):
-  LOX_PARSER_ERROR: 0.08 → 0.00
-  LOX_TYPE_NOT_ASSIGNABLE: 0.04 → 0.00
+  code                        a     b
+  LOX_PARSER_ERROR         0.08  0.00
+  LOX_TYPE_NOT_ASSIGNABLE  0.04  0.00
+
+flaky — identical runs split between pass and fail, so chance moves these pass rates:
+  integerMath: a 2/5 (2× syntax, 1× semantics), b 4/5 (1× semantics)
+  linkedStack: a 4/5 (1× behaviour), b 4/5 (1× behaviour)
+  negativeSubclass: a 2/5 (3× diagnostics), b 4/5 (1× diagnostics)
+  shapes: a 4/5 (1× semantics)
 ```
 
 - **What was measured.** Each run's report carries a `fingerprint`: the Lanzer version, the DSL
@@ -363,9 +381,12 @@ diagnostic codes that moved (occurrences per run):
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or
   `removed`.
 - **Failed checks.** An agent that calls `validate` as it works can end every run with a pass
-  whatever the skill, so the pass rate alone may not move. Under each campaign where either side had
-  any, `compare` lists the failed `validate` calls of each run (`failed checks per run: 11,0,2 →
-  1,1,14`): how hard the agent had to work to get there.
+  whatever the skill, so the pass rate alone may not move. When any run had some, the campaign table
+  gets a column with the failed `validate` calls of each run (`11,0,2 → 1,1,14`): how hard the agent
+  had to work to get there.
+- **Spread and flaky campaigns.** Per campaign, cost, time and tokens per run are given as mean ± sample
+  standard deviation, so one expensive run is not mistaken for a trend. A campaign whose identical
+  runs split between pass and fail is listed as flaky: chance moves its pass rate.
 - **No significance claims.** A campaign with fewer than 5 runs on either side is flagged — one run
   flipping moves its rate by 20 points or more — with a hint to rerun with `--runs`. `compare` does
   not run a statistical test; at these sample sizes it would mostly say "not enough runs".
