@@ -8,6 +8,8 @@ import {
     findLanzerGenerationJob,
     loadLanzerDocumentFromFile,
     buildLanzerSuiteReport,
+    meetsMinPass,
+    parseMinPass,
     permissiveLanzerPolicy,
     previewLanzerCampaignTask,
     renderLanzerRunSummary,
@@ -146,8 +148,28 @@ export function createLoxLanzerCli(): Command {
         .option('--no-report', 'do not write a JSON run report')
         .option('--verbose', 'show what the agent is doing: commands it runs, files it touches, and its narration')
         .option('--quiet', 'suppress per-event progress output entirely')
+        .option('--runs <n>', 'run each campaign n identical times, each in its own copy of the workspace, and report the pass rate')
+        .option('--parallel <k>', 'with --runs, run at most k at once (default 1)')
+        .option('--min-pass <share>', 'the share of runs each campaign must pass for a zero exit code: k/n (e.g. 2/3) or a percentage (default: all)')
         .description('run a .lanzer campaign through an agent to generate the target .lox file(s)')
-        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean }) => {
+        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string }) => {
+            // Checked before anything runs: a typo here should not cost a batch of agent runs.
+            const runs = options.runs === undefined ? 1 : Number.parseInt(options.runs, 10);
+            const parallel = options.parallel === undefined ? 1 : Number.parseInt(options.parallel, 10);
+            let minPass: number;
+            try {
+                minPass = parseMinPass(options.minPass);
+            } catch (error) {
+                console.error(error instanceof Error ? error.message : String(error));
+                process.exitCode = 1;
+                return;
+            }
+            if (!Number.isInteger(runs) || runs < 1 || !Number.isInteger(parallel) || parallel < 1) {
+                console.error('--runs and --parallel must be whole numbers of at least 1');
+                process.exitCode = 1;
+                return;
+            }
+
             const permissions = options.allowAll
                 ? permissiveLanzerPolicy()
                 : options.allow
@@ -181,16 +203,14 @@ export function createLoxLanzerCli(): Command {
                 console.error(`Agent permissions: ${describePermissionPolicy(acp.permissions)}`);
             }
 
-            const { runs } = await runLoxCampaignFile(file, acp);
-            const reports = runs.flatMap((run) => (run.report ? [run.report] : []));
-            let failed = 0;
+            const { runs: results } = await runLoxCampaignFile(file, acp, { runs, parallel });
+            const reports = results.flatMap((run) => (run.report ? [run.report] : []));
 
-            for (const run of runs) {
+            for (const run of results) {
                 const label = 'campaignName' in run.task ? run.task.campaignName : 'campaign';
                 const report = run.report;
                 const ok = report?.ok ?? run.validation?.ok ?? true;
                 if (!ok) {
-                    failed += 1;
                     console.error(`✗ ${label} — ${report?.failedStageDescription ?? 'requirements not satisfied'}`);
                 } else {
                     console.log(`✓ ${label} — generated and validated`);
@@ -224,7 +244,12 @@ export function createLoxLanzerCli(): Command {
                 }
             }
 
-            if (failed > 0) process.exitCode = 1;
+            // Each campaign must pass its share of runs; with one run each, that is every run.
+            const byCampaign = buildLanzerSuiteReport(reports, '').summary.byCampaign;
+            const shortOfShare = Object.values(byCampaign).some((campaign) => !meetsMinPass(campaign.succeeded, campaign.total, minPass));
+            // A run that ended without a report still counts when it failed.
+            const unreportedFailure = results.some((run) => !run.report && run.validation?.ok === false);
+            if (shortOfShare || unreportedFailure) process.exitCode = 1;
         });
 
     return program;

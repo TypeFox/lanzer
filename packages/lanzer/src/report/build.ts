@@ -169,6 +169,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
 export function summariseLanzerRuns(runs: LanzerRunReport[]): LanzerSuiteSummary {
     const byStage: Partial<Record<LanzerRunStage, number>> = {};
     const byCode: Record<string, number> = {};
+    const byCampaign: LanzerSuiteSummary['byCampaign'] = {};
     let totalCostAmount: number | undefined;
     let costCurrency: string | undefined;
     let totalTokens = 0;
@@ -177,6 +178,10 @@ export function summariseLanzerRuns(runs: LanzerRunReport[]): LanzerSuiteSummary
 
     for (const run of runs) {
         if (run.failedStage) byStage[run.failedStage] = (byStage[run.failedStage] ?? 0) + 1;
+        const campaign = (byCampaign[run.campaign] ??= { total: 0, succeeded: 0, byStage: {} });
+        campaign.total += 1;
+        if (run.ok) campaign.succeeded += 1;
+        if (run.failedStage) campaign.byStage[run.failedStage] = (campaign.byStage[run.failedStage] ?? 0) + 1;
         for (const [code, count] of Object.entries(run.issues.byCode)) {
             byCode[code] = (byCode[code] ?? 0) + count;
         }
@@ -194,6 +199,7 @@ export function summariseLanzerRuns(runs: LanzerRunReport[]): LanzerSuiteSummary
         succeeded: runs.filter((run) => run.ok).length,
         failed: runs.filter((run) => !run.ok).length,
         byStage,
+        byCampaign,
         byCode,
         totalDurationMs,
         ...(totalCostAmount !== undefined ? { totalCostAmount } : {}),

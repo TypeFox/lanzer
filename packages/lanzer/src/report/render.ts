@@ -41,6 +41,10 @@ function describeConfiguration(configuration: LanzerRunConfiguration): string {
 export function renderLanzerRunSummary(report: LanzerRunReport): string {
     const lines: string[] = [];
     const verdict = report.ok ? 'ok' : `failed at ${report.failedStage} — ${report.failedStageDescription}`;
+    if (report.repetition) {
+        // Which of the identical runs this was, and where its files are for a look afterwards.
+        lines.push(`  run ${report.repetition.index}/${report.repetition.total} in ${report.repetition.workspace}`);
+    }
     lines.push(`  ${verdict}`);
     if (report.failureMessage) {
         for (const line of report.failureMessage.split('\n')) {
@@ -133,7 +137,18 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
 export function renderLanzerSuiteSummary(report: LanzerSuiteReport): string {
     const { summary } = report;
     const lines: string[] = [];
-    lines.push(`${summary.succeeded}/${summary.total} campaign(s) succeeded, ${summary.failed} failed`);
+    const repeated = Object.values(summary.byCampaign).some((campaign) => campaign.total > 1);
+    lines.push(`${summary.succeeded}/${summary.total} ${repeated ? 'run(s)' : 'campaign(s)'} succeeded, ${summary.failed} failed`);
+
+    // With repeated runs the pass rate per campaign is the headline: one pass in three is the
+    // warning a single run could not give.
+    if (repeated) {
+        lines.push('pass rate by campaign:');
+        for (const [campaign, counts] of Object.entries(summary.byCampaign)) {
+            const stages = rankCounts(counts.byStage).map(([stage, count]) => `${count}× ${stage}`);
+            lines.push(`  ${campaign}: ${counts.succeeded}/${counts.total} passed${stages.length > 0 ? ` (${stages.join(', ')})` : ''}`);
+        }
+    }
 
     const stages = rankCounts(summary.byStage);
     if (stages.length > 0) {

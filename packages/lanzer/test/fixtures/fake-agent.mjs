@@ -5,6 +5,7 @@
 //
 // Script: [[step, ...], ...] where a step is one of
 //   { "write": "<path>", "content": "<text>" }
+//   { "writeRel": "<path>", "content": "<text>" }  — the path relative to the session's cwd
 //   { "read": "<path>" }
 //   { "tool": "<lanzer tool name>" }   — call a tool on the session's MCP server
 //   { "exit": <code> }                 — die mid-turn
@@ -12,6 +13,7 @@
 // With FAKE_AGENT_MODES set it also offers session modes, and logs `session` (its `_meta`) and
 // `mode` (each session/set_mode) entries.
 import { appendFileSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -41,7 +43,11 @@ async function runStep(step, session, cx, prompt) {
         process.exit(step.exit);
     }
     try {
-        if ('write' in step) {
+        if ('writeRel' in step) {
+            const path = resolve(session.cwd, step.writeRel);
+            await cx.request(acp.methods.client.fs.writeTextFile, { sessionId: session.id, path, content: step.content ?? '' });
+            log({ prompt, op: 'write', path, ok: true });
+        } else if ('write' in step) {
             await cx.request(acp.methods.client.fs.writeTextFile, { sessionId: session.id, path: step.write, content: step.content ?? '' });
             log({ prompt, op: 'write', path: step.write, ok: true });
         } else if ('read' in step) {
@@ -60,7 +66,7 @@ acp.agent({ name: 'fake-agent' })
     .onRequest('initialize', () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: {}, agentInfo: { name: 'fake-agent', version: '1.2.3' } }))
     .onRequest('session/new', ({ params }) => {
         const id = `session-${sessions.size + 1}`;
-        sessions.set(id, { id, index: sessions.size + 1, mcpServers: params.mcpServers ?? [] });
+        sessions.set(id, { id, index: sessions.size + 1, cwd: params.cwd, mcpServers: params.mcpServers ?? [] });
         if (!modeIds) {
             return { sessionId: id };
         }
