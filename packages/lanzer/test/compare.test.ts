@@ -285,3 +285,25 @@ describe('readLanzerSuiteReport', () => {
         await expect(readLanzerSuiteReport(join(dir, 'broken.json'))).rejects.toThrow(/is not JSON/);
     });
 });
+
+describe('reads outside what the agent was given', () => {
+    const reading = (campaign: string, paths: string[]) =>
+        run(campaign, undefined, { outsideReads: paths.map((path) => ({ path, via: 'Read' })) });
+
+    test('are counted per campaign on each side, and listed with a warning', () => {
+        const comparison = compareLanzerSuiteReports(
+            suite(reading('stack', []), reading('math', ['/repo/skills/write-lox/SKILL.md'])),
+            suite(reading('stack', []), reading('math', ['/repo/skills/write-lox/SKILL.md', '/repo/README.md']))
+        );
+        expect(comparison.outsideReads).toEqual([{ campaign: 'math', a: 1, b: 2 }]);
+        const text = renderLanzerSuiteComparison(comparison);
+        expect(text).toContain('read outside the files they were given');
+        expect(text).toContain('  math: 1 file(s) → 2 file(s)');
+    });
+
+    test('are absent when no run read outside, including older reports that never recorded it', () => {
+        const comparison = compareLanzerSuiteReports(suite(run('stack', undefined, { outsideReads: undefined })), suite(reading('stack', [])));
+        expect(comparison.outsideReads).toEqual([]);
+        expect(renderLanzerSuiteComparison(comparison)).not.toContain('read outside');
+    });
+});

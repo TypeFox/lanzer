@@ -77,6 +77,8 @@ export class RecordingClient {
     private latestCost?: { amount: number; currency: string };
     /** Refusals this run, so a fix pass can be told what the agent was not allowed to try. */
     private readonly deniedToolCalls: { kind: string; title: string }[] = [];
+    /** Files the agent read or searched outside what it was given, by path, with how. */
+    private readonly outsideReads = new Map<string, string>();
     private agentLineBuf = '';
     private thoughtLineBuf = '';
 
@@ -184,6 +186,7 @@ export class RecordingClient {
                 // often has an empty rawInput; the real command usually arrives on tool_call_update,
                 // so we extract from both and dedupe per tool-call id.
                 this.emitToolDetail(toolCallId, update.rawInput, update.locations);
+                this.noteOutsideReads(toolCallId, update.locations);
                 return;
             }
             case 'tool_call_update': {
@@ -196,6 +199,7 @@ export class RecordingClient {
                 });
                 // The command/args and touched files typically arrive here, not on the initial call.
                 this.emitToolDetail(toolCallId, update.rawInput, update.locations);
+                this.noteOutsideReads(toolCallId, update.locations);
                 if (status === 'completed' || status === 'failed') {
                     const title = this.toolTitles.get(toolCallId) ?? toolCallId;
                     const kindStr = this.toolKinds.get(toolCallId) ?? '';
@@ -313,6 +317,8 @@ export class RecordingClient {
     }
 
     async readTextFile(params: acp.ReadTextFileRequest): Promise<{ content: string }> {
+        // Refused below, but still worth reporting: the attempt is the signal.
+        if (!this.isReadable(params.path)) this.outsideReads.set(resolve(params.path), 'fs/read_text_file (refused)');
         const filePath = this.assertAllowedPath(params.path, this.readableRoots, 'read');
         const content = await readFile(filePath, 'utf8');
         if (!params.line && !params.limit) {
@@ -342,6 +348,35 @@ export class RecordingClient {
 
     getWrittenPaths(): string[] {
         return Array.from(this.writtenPaths);
+    }
+
+    /**
+     * Files the agent read or searched outside the workspace and the directories it was pointed
+     * at, in the order first seen. Detection, not enforcement: an agent's own tools read where it
+     * likes, and one that goes looking elsewhere was given a reason to by its prompt.
+     */
+    getOutsideReads(): { path: string; via: string }[] {
+        return Array.from(this.outsideReads, ([path, via]) => ({ path, via }));
+    }
+
+    private isReadable(filePath: string): boolean {
+        const canonical = canonicalPath(resolve(filePath));
+        return this.readableRoots.some((root) => isWithin(root, canonical));
+    }
+
+    /**
+     * Note the locations of a reading or searching tool call that fall outside the readable roots.
+     * The kind comes from the initial `tool_call`, as updates usually leave it out.
+     */
+    private noteOutsideReads(toolCallId: string | undefined, locations: { path?: string }[] | undefined | null): void {
+        const kind = toolCallId ? this.toolKinds.get(toolCallId) : undefined;
+        if (kind !== 'read' && kind !== 'search') return;
+        const title = (toolCallId && this.toolTitles.get(toolCallId)) || kind;
+        for (const location of locations ?? []) {
+            if (location.path && !this.isReadable(location.path) && !this.outsideReads.has(resolve(location.path))) {
+                this.outsideReads.set(resolve(location.path), title);
+            }
+        }
     }
 
     /**

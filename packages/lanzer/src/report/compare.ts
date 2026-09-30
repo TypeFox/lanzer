@@ -91,6 +91,11 @@ export interface LanzerSuiteComparison {
     setup: LanzerSetupDifference[];
     /** Campaigns with fewer than {@link LANZER_SMALL_SAMPLE_RUNS} runs on either side. */
     smallSamples: { campaign: string; a: number; b: number }[];
+    /**
+     * Campaigns whose runs read files outside what they were given, with how many such files each
+     * side read in all. A skill benchmark whose agent read another skill measured that one too.
+     */
+    outsideReads: { campaign: string; a: number; b: number }[];
 }
 
 function describeSide(report: LanzerSuiteReport): LanzerSuiteSide {
@@ -286,10 +291,26 @@ export function compareLanzerSuiteReports(a: LanzerSuiteReport, b: LanzerSuiteRe
         stages: shifts(a.summary.byStage, b.summary.byStage, sideA.runs, sideB.runs, LANZER_RUN_STAGES),
         codes: shifts(a.summary.byCode, b.summary.byCode, sideA.runs, sideB.runs),
         setup: compareSetup(a, b),
+        outsideReads: outsideReadsByCampaign(a, b),
         smallSamples: shared
             .filter((campaign) => (campaign.a?.total ?? 0) < LANZER_SMALL_SAMPLE_RUNS || (campaign.b?.total ?? 0) < LANZER_SMALL_SAMPLE_RUNS)
             .map((campaign) => ({ campaign: campaign.campaign, a: campaign.a?.total ?? 0, b: campaign.b?.total ?? 0 }))
     };
+}
+
+/** Per campaign, the outside reads of all its runs on each side; only campaigns with any. */
+function outsideReadsByCampaign(a: LanzerSuiteReport, b: LanzerSuiteReport): LanzerSuiteComparison['outsideReads'] {
+    const counts = new Map<string, { a: number; b: number }>();
+    for (const [side, report] of [['a', a], ['b', b]] as const) {
+        for (const run of report.runs) {
+            const reads = run.outsideReads?.length ?? 0;
+            if (reads === 0) continue;
+            const entry = counts.get(run.campaign) ?? { a: 0, b: 0 };
+            entry[side] += reads;
+            counts.set(run.campaign, entry);
+        }
+    }
+    return Array.from(counts, ([campaign, entry]) => ({ campaign, ...entry })).sort((x, y) => x.campaign.localeCompare(y.campaign));
 }
 
 /** Whether a parsed JSON value has the shape of a suite report, for a clear error on a wrong file. */
@@ -458,6 +479,13 @@ export function renderLanzerSuiteComparison(comparison: LanzerSuiteComparison, l
             const sides = [campaign.a?.flaky ? `a ${outcome(campaign.a)}` : '', campaign.b?.flaky ? `b ${outcome(campaign.b)}` : ''].filter(Boolean);
             lines.push(`  ${campaign.campaign}: ${sides.join(', ')}`);
         }
+    }
+
+    if (comparison.outsideReads.length > 0) {
+        lines.push('');
+        lines.push('read outside the files they were given — the prompt left the agent something to look for:');
+        for (const entry of comparison.outsideReads) lines.push(`  ${entry.campaign}: ${entry.a} file(s) → ${entry.b} file(s)`);
+        lines.push('  see each run\'s outsideReads in the reports');
     }
 
     if (comparison.smallSamples.length > 0) {

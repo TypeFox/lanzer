@@ -8,6 +8,9 @@
 //   { "writeRel": "<path>", "content": "<text>" }  — the path relative to the session's cwd
 //   { "read": "<path>" }
 //   { "tool": "<lanzer tool name>" }   — call a tool on the session's MCP server
+//   { "toolCall": { "kind": "read", "title": "Read", "path": "<path>" } }
+//                                      — report a tool call of its own, with that file as its
+//                                        location, the way Claude reports its Read or Grep
 //   { "exit": <code> }                 — die mid-turn
 //
 // With FAKE_AGENT_MODES set it also offers session modes, and logs `session` (its `_meta`) and
@@ -53,6 +56,14 @@ async function runStep(step, session, cx, prompt) {
         } else if ('read' in step) {
             const { content } = await cx.request(acp.methods.client.fs.readTextFile, { sessionId: session.id, path: step.read });
             log({ prompt, op: 'read', path: step.read, ok: true, content });
+        } else if ('toolCall' in step) {
+            const { kind, title, path } = step.toolCall;
+            const toolCallId = `call-${prompt}-${Math.random().toString(36).slice(2)}`;
+            await cx.notify('session/update', {
+                sessionId: session.id,
+                update: { sessionUpdate: 'tool_call', toolCallId, title, kind, status: 'completed', locations: [{ path }] }
+            });
+            log({ prompt, op: 'toolCall', path, ok: true });
         } else if ('tool' in step) {
             const text = await callTool(session.mcpServers[0], step.tool);
             log({ prompt, op: 'tool', tool: step.tool, session: session.index, ok: true, text });

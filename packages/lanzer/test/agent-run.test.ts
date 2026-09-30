@@ -15,7 +15,12 @@ import { resolveLanzerCampaign } from '../src/campaign/map.js';
 import { isRecord } from '../src/util/guards.js';
 import { fixture, loadCampaignSpecs } from './helpers.js';
 
-type Step = { write: string; content?: string } | { read: string } | { tool: string } | { exit: number };
+type Step =
+    | { write: string; content?: string }
+    | { read: string }
+    | { tool: string }
+    | { toolCall: { kind: string; title: string; path: string } }
+    | { exit: number };
 
 interface LogEntry {
     op: string;
@@ -301,6 +306,35 @@ describe('Lanzer tools across sessions', () => {
         expect(log.map((entry) => [entry.session, entry.ok, entry.error])).toEqual([[1, true, undefined], [2, true, undefined]]);
         expect(log[1].text).toContain('INVALID');
         expect(run.toolCalls).toHaveLength(2);
+    });
+});
+
+describe('reads outside what the agent was given', () => {
+    test('a read or search tool call outside the roots is recorded once, with its title', async () => {
+        const { run } = await runFakeAgent([[
+            { write: job.absoluteOutputPath, content: 'fn main() { return; }' },
+            { toolCall: { kind: 'read', title: 'Read skills/write-lox/SKILL.md', path: join(outside, 'SKILL.md') } },
+            { toolCall: { kind: 'search', title: 'Grep write-lox', path: join(outside, 'SKILL.md') } },
+            { toolCall: { kind: 'search', title: 'Grep main', path: join(workspace, 'main.mini') } }
+        ]]);
+        // The second report of the same file is not a second read; the workspace is the agent's own.
+        expect(run.outsideReads).toEqual([{ path: join(outside, 'SKILL.md'), via: 'Read skills/write-lox/SKILL.md' }]);
+    });
+
+    test('an edit elsewhere is not a read, and is left to the file-set check', async () => {
+        const { run } = await runFakeAgent([[
+            { write: job.absoluteOutputPath, content: 'fn main() { return; }' },
+            { toolCall: { kind: 'edit', title: 'Edit', path: join(outside, 'other.mini') } }
+        ]]);
+        expect(run.outsideReads).toEqual([]);
+    });
+
+    test('an fs read outside the roots is recorded as refused', async () => {
+        const { run } = await runFakeAgent([[
+            { write: job.absoluteOutputPath, content: 'fn main() { return; }' },
+            { read: join(outside, 'secret.txt') }
+        ]]);
+        expect(run.outsideReads).toEqual([{ path: join(outside, 'secret.txt'), via: 'fs/read_text_file (refused)' }]);
     });
 });
 

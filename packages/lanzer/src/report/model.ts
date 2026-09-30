@@ -153,6 +153,12 @@ export interface LanzerRunReport {
     extraFiles: string[];
     toolCalls: LanzerToolCallRecord[];
     deniedToolCalls: { kind: string; title: string }[];
+    /**
+     * Files the agent read or searched outside the workspace, the skill, the grammar reference and
+     * the reference files. Not a failure: a sign the prompt left the agent something to look for.
+     * Absent in reports from before it was recorded.
+     */
+    outsideReads?: { path: string; via: string }[];
     usage: LanzerAgentUsage;
     /** Each prompt and the validation that followed, so the trajectory is visible, not just the end. */
     attemptLog: LanzerAttemptRecord[];

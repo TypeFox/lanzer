@@ -72,6 +72,13 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
         const kinds = Array.from(new Set(report.deniedToolCalls.map((call) => call.kind)));
         lines.push(`  refused by policy: ${report.deniedToolCalls.length} call(s) (${kinds.join(', ')})`);
     }
+    // Not a failure, a question for the prompt: what did the agent go looking for?
+    const outside = report.outsideReads ?? [];
+    if (outside.length > 0) {
+        lines.push(`  read outside the files it was given: ${outside.length}`);
+        for (const read of outside.slice(0, MAX_LISTED_DIAGNOSTICS)) lines.push(`    ${read.path} (${read.via})`);
+        if (outside.length > MAX_LISTED_DIAGNOSTICS) lines.push(`    … ${outside.length - MAX_LISTED_DIAGNOSTICS} more (see the report file)`);
+    }
 
     // The trajectory, when there was more than one attempt: a falling issue count is an agent
     // converging, a flat one is an agent that stopped learning from the prompt, and the final

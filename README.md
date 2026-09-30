@@ -396,6 +396,12 @@ flaky — identical runs split between pass and fail, so chance moves these pass
   ends, so they show only as failed checks. `--no-tools` offers no tools; then a mistake the agent
   does not catch by itself fails the run, and moves the pass rate and the failure stages. Combine it
   with `--max-attempts 1` to leave out fix prompts too.
+- **Reads outside what the agent was given.** Each report lists the files the agent read or searched
+  outside the workspace, the skill, the grammar reference and the reference files, from the file
+  locations its tools report; the run summary shows them and `compare` warns about them. They are not
+  a failure, and nothing stops them: an agent that goes looking elsewhere — say, for the repository's
+  own copy of the skill you are replacing — was given a reason to by its prompt, and that is what to
+  fix.
 - **Per run, not totals.** Cost, time, tokens, stage failures and diagnostic codes are divided by
   each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or

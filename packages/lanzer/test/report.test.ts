@@ -196,3 +196,18 @@ describe('prompts in the suite report', () => {
         expect(buildLanzerSuiteReport([report], 'now')).not.toHaveProperty('prompts');
     });
 });
+
+describe('reads outside what the agent was given, in the run summary', () => {
+    test('are listed with how each was read', async () => {
+        const outsideReads = [{ path: '/repo/skills/write-lox/SKILL.md', via: 'Read skills/write-lox/SKILL.md' }];
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { outsideReads }), validation: verdict() });
+        expect(report.outsideReads).toEqual(outsideReads);
+        expect(renderLanzerRunSummary(report)).toContain('read outside the files it was given: 1\n    /repo/skills/write-lox/SKILL.md (Read skills/write-lox/SKILL.md)');
+    });
+
+    test('are an empty list, and no line, when there were none', async () => {
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob), validation: verdict() });
+        expect(report.outsideReads).toEqual([]);
+        expect(renderLanzerRunSummary(report)).not.toContain('read outside');
+    });
+});

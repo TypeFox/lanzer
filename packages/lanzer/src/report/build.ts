@@ -164,6 +164,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         extraFiles: input.extraFiles ?? [],
         toolCalls: run.toolCalls,
         deniedToolCalls: run.deniedToolCalls,
+        outsideReads: run.outsideReads ?? [],
         usage: run.usage,
         attemptLog: run.attemptLog,
         events: {

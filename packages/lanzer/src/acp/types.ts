@@ -192,6 +192,11 @@ export interface LanzerAgentRunResult {
     toolCalls: LanzerToolCallRecord[];
     /** Tool calls the permission policy refused, in order. */
     deniedToolCalls: { kind: string; title: string }[];
+    /**
+     * Files the agent read or searched outside the workspace and the directories it was pointed
+     * at. Absent on a result built by hand.
+     */
+    outsideReads?: { path: string; via: string }[];
     /** Tokens, context and cost, as far as the agent reported them. */
     usage: LanzerAgentUsage;
     /** Wall-clock time for the whole run, including agent startup and validation. */

@@ -173,6 +173,7 @@ export async function executeLanzerTaskOverCodex(
             staleFiles: outcome.staleFiles,
             toolCalls: [],
             deniedToolCalls: client.getDeniedToolCalls(),
+            outsideReads: client.getOutsideReads(),
             usage: mergeUsage(tokens, client.getReportedUsage()),
             durationMs: Date.now() - startedAtMs
         };
