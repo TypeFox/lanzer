@@ -2,16 +2,30 @@ import { NodeFileSystem } from 'langium/node';
 import {
     resolveLanzerCampaignFile,
     runLanzerCampaign,
+    runLanzerCampaignRepeatedly,
     type LanzerAcpOptions,
     type LanzerAgentRunResult,
-    type LanzerCampaignRunner,
-    type LanzerService
+    type LanzerRepeatedRunsResult,
+    type LanzerRepeatOptions,
+    type RunLanzerCampaignDeps
 } from 'lanzer';
 import { createLanzerLoxServices } from './lox-host.js';
 
 export interface RunLoxCampaignResult {
-    /** One result per resolved campaign in the file (campaigns run sequentially). */
+    /** Every run, in order: one per campaign, or `repeat.runs` per campaign when repeating. */
     runs: LanzerAgentRunResult[];
+    /** With repeated runs, each campaign's batch and its pass count. */
+    batches?: LanzerRepeatedRunsResult[];
+}
+
+/**
+ * Lox services for one run. Fresh every time: Langium resolves names across every document it has
+ * loaded, so two runs, or two campaigns, sharing services could pass on a name only the other
+ * defined.
+ */
+function createLoxDeps(): RunLanzerCampaignDeps {
+    const { Lanzer } = createLanzerLoxServices(NodeFileSystem);
+    return { service: Lanzer.lanzer.Lanzer, runner: Lanzer.lanzer.CampaignRunner };
 }
 
 /**
@@ -24,12 +38,15 @@ export interface RunLoxCampaignResult {
  * by the Lox campaign runner), then delegates the per-campaign orchestration to the host-agnostic
  * {@link runLanzerCampaign}.
  *
- * Campaigns run **sequentially**; batching/concurrency over multiple files is left to the caller.
+ * Campaigns run **sequentially**, each with fresh Lox services. With `repeat.runs` above one, each
+ * campaign runs that many identical times in its own workspace copies (see
+ * {@link runLanzerCampaignRepeatedly}), `repeat.parallel` at a time.
  * If the campaign file fails to parse/resolve, this throws with the collected issues.
  */
 export async function runLoxCampaignFile(
     campaignFile: string,
-    acp: LanzerAcpOptions
+    acp: LanzerAcpOptions,
+    repeat?: LanzerRepeatOptions
 ): Promise<RunLoxCampaignResult> {
     const resolved = await resolveLanzerCampaignFile(campaignFile, { validate: true });
     if (resolved.issues.length > 0) {
@@ -37,13 +54,17 @@ export async function runLoxCampaignFile(
         throw new Error(`Campaign file is invalid:\n${detail}`);
     }
 
-    const { Lanzer } = createLanzerLoxServices(NodeFileSystem);
-    const service: LanzerService = Lanzer.lanzer.Lanzer;
-    const runner: LanzerCampaignRunner = Lanzer.lanzer.CampaignRunner;
+    if (repeat && repeat.runs > 1) {
+        const batches: LanzerRepeatedRunsResult[] = [];
+        for (const campaign of resolved.resolvedCampaigns) {
+            batches.push(await runLanzerCampaignRepeatedly(campaign, createLoxDeps, acp, repeat));
+        }
+        return { runs: batches.flatMap((batch) => batch.runs.map((run) => run.result)), batches };
+    }
 
     const runs: LanzerAgentRunResult[] = [];
     for (const campaign of resolved.resolvedCampaigns) {
-        runs.push(await runLanzerCampaign(campaign, { service, runner }, acp));
+        runs.push(await runLanzerCampaign(campaign, createLoxDeps(), acp));
     }
     return { runs };
 }

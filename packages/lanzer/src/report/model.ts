@@ -70,6 +70,8 @@ export interface LanzerReportDocument {
 export interface LanzerRunReport {
     campaign: string;
     ok: boolean;
+    /** Set when this is one of several identical runs: which one, of how many, and where it ran. */
+    repetition?: { index: number; total: number; workspace: string };
     /** Absent when the run succeeded. */
     failedStage?: LanzerRunStage;
     failedStageDescription?: string;
@@ -120,6 +122,11 @@ export interface LanzerSuiteSummary {
     failed: number;
     /** How many runs failed at each stage. Stages nothing failed at are omitted. */
     byStage: Partial<Record<LanzerRunStage, number>>;
+    /**
+     * Per campaign: how many runs, how many passed, and where the rest failed. With repeated runs
+     * this is each campaign's pass rate.
+     */
+    byCampaign: Record<string, { total: number; succeeded: number; byStage: Partial<Record<LanzerRunStage, number>> }>;
     /** Diagnostic code occurrences across every run. */
     byCode: Record<string, number>;
     totalDurationMs: number;

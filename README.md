@@ -334,6 +334,29 @@ by code — so a suite run answers "how many succeeded, and where did the rest f
 and a negative file's entry in `documents` is marked `expectsDiagnostics`, since the diagnostics
 listed there are the ones it was meant to produce.
 
+#### Repeating runs
+
+One passing run says little about an agent that gets the task right two times in three. `--runs N`
+runs each campaign N times with the identical prompt and reports how often it passed:
+
+```shell
+node --env-file=.env ./bin/lox-lanzer.js generate ./examples/fizzbuzz.lanzer --runs 5 --parallel 2
+```
+
+- Each run works in its own copy of the workspace, beside it at `<workspace>.runs/<timestamp>/run-<i>/`.
+  The copy leaves out the campaign's generated files, so every run starts clean and none can read
+  another's answer. The folders stay after the run, so a failed run's files can be inspected; the
+  workspace itself is not touched.
+- Each run is validated with its own fresh language services. Langium resolves names across every
+  document it has loaded, so runs sharing services could pass on a function only another run wrote.
+- `--parallel K` runs up to K at once (default 1).
+- Every run keeps its full report, numbered (`run 2/5 in …`). The summary leads with the pass rate
+  per campaign and where the failures happened, e.g. `fizzbuzzLox: 4/5 passed (1× behaviour)`.
+- The command fails unless every run of every campaign passed. `--min-pass 4/5` or `--min-pass 80%`
+  loosens that, e.g. for CI.
+
+Without `--runs`, `generate` works in the workspace itself, as before.
+
 ### 2. Library fast path
 
 Call one function and let it orchestrate jobs → policy → DSL skill → ACP run → requirement
