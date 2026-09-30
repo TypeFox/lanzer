@@ -7,6 +7,7 @@ import { NodeFileSystem } from 'langium/node';
 import { buildLanzerGenerationJobs, findLanzerGenerationJob } from './campaign/jobs.js';
 import { loadLanzerDocumentFromFile } from './campaign/load.js';
 import { resolveLanzerCampaignFile } from './campaign/resolve.js';
+import { describeSelectableTypes, loadGrammarsFor, renderSelectableTypes } from './grammar/type-catalog.js';
 import { createLanzerServices } from './lanzer-module.js';
 import { previewLanzerCampaignTask, resolveAcpOptionsFromEnv } from './services/campaign-run.js';
 import { DefaultLanzerService } from './services/default-services.js';
@@ -126,6 +127,18 @@ async function previewPrompts(
     return prompts;
 }
 
+/** List the names a selector can use, from a campaign's imported grammars or a grammar itself. */
+export async function typesAction(fileName: string, options: { json?: boolean }): Promise<void> {
+    const grammars = await loadGrammarsFor(fileName);
+    if (grammars.length === 0) {
+        console.log(chalk.red(`No grammar found for ${fileName}: pass a .langium grammar, or a .lanzer campaign that imports one.`));
+        process.exitCode = 1;
+        return;
+    }
+    const types = describeSelectableTypes(grammars);
+    console.log(options.json ? JSON.stringify(types, null, 2) : renderSelectableTypes(types));
+}
+
 export default function main(): void {
     const program = new Command();
     program.version(JSON.parse(packageContent).version);
@@ -145,6 +158,13 @@ export default function main(): void {
         .option('--job <selector>', 'select one job by id or file alias')
         .description('resolve a valid .lanzer campaign into concrete generation jobs')
         .action(planAction);
+
+    program
+        .command('types')
+        .argument('<file>', 'a .lanzer campaign (its imported grammars) or a .langium grammar')
+        .option('--json', 'print the types as JSON')
+        .description('list the type names a selector can use, with their properties, subtypes and direct children')
+        .action(typesAction);
 
     program.parse(process.argv);
 }

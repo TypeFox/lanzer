@@ -24,6 +24,7 @@ export * from './campaign/resolve.js';
 export * from './grammar/cache.js';
 export * from './grammar/parse.js';
 export * from './grammar/reachability.js';
+export * from './grammar/type-catalog.js';
 export * from './validations/behaviour-validations.js';
 export * from './validations/diagnostic-validations.js';
 export * from './validations/requirement-validations.js';

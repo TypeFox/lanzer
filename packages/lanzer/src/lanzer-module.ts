@@ -16,6 +16,7 @@ import {
 } from 'langium/grammar';
 import { LanzerAstReflection } from './generated/ast.js';
 import { LanzerGeneratedModule, LanzerGeneratedSharedModule } from './generated/module.js';
+import { LanzerLinker } from './references/linker.js';
 import { LanzerScopeProvider } from './references/scope.js';
 import { registerValidationChecks } from './lanzer-validator.js';
 import { CompositeAstReflection } from './grammar/composite-reflection.js';
@@ -25,6 +26,7 @@ export { CompositeAstReflection } from './grammar/composite-reflection.js';
 export type LanzerLanguageAddedServices = {
     references: {
         ScopeProvider: LanzerScopeProvider;
+        Linker: LanzerLinker;
     };
 };
 export type LanzerLanguageServices = LangiumServices & LanzerLanguageAddedServices;
@@ -34,7 +36,8 @@ export const LanzerLanguageModule: Module<
     PartialLangiumServices & LanzerLanguageAddedServices
 > = {
     references: {
-        ScopeProvider: (services) => new LanzerScopeProvider(services)
+        ScopeProvider: (services) => new LanzerScopeProvider(services),
+        Linker: (services) => new LanzerLinker(services)
     }
 };
 

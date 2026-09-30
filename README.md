@@ -87,6 +87,39 @@ Lanzer campaign is invalid: file:///…/packages/lanzer-lox/examples/invalid-dem
 - [diagnostic] @ 12:37 Type 'FunctionDeclaration' has no property 'notAProp'.
 ```
 
+### Finding type names
+
+Selectors name the grammar's AST **types**, which are not always the rule names you see in the
+surface syntax: a rule can produce another type (`Assignment infers Expression`), and a union
+(`LoxElement`) stands for several. `types` lists every name a selector can use, from a campaign's
+imported grammars or a `.langium` file directly, with its properties (a cross-reference names its
+target), what it can be, and what can appear directly inside it (what `>` reaches). `--json` gives
+the same as data.
+
+```shell
+node ./bin/lox-lanzer.js types ./examples/hello.lanzer
+```
+
+```text
+FunctionDeclaration  (parser rule)
+  properties: body, name, parameters, returnType
+  direct children: ExpressionBlock, Parameter, TypeReference
+Assignment  (parser rule, matches 'Expression' nodes)
+  …
+MemberCall  (parser rule)
+  properties: arguments, element -> NamedElement, explicitOperationCall, previous
+  direct children: Expression
+```
+
+`validate` also suggests the likely fix for the common slips: a mistyped type or property, and a
+direct child (`>`) that is really a descendant:
+
+```text
+- [diagnostic] @ 5:17 Could not resolve reference to AbstractRule named 'FunctionDeclaraton'. Did you mean 'FunctionDeclaration'?
+- [diagnostic] @ 6:37 Type 'FunctionDeclaration' has no property 'nmae'. Did you mean 'name'?
+- [diagnostic] @ 7:39 'MemberCall' is not reachable as a direct child of 'FunctionDeclaration' in the imported grammar. It is a descendant, though, via 'ExpressionBlock' > 'LoxElement': use '>>'.
+```
+
 ### Generating from a campaign
 
 Once a campaign is valid, generate the target `.lox` file(s) by dispatching it to your configured
