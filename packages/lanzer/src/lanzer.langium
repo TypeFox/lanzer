@@ -110,10 +110,14 @@ Predicate:
         )?
     ']';
 
-// The diagnostic-expectation keywords are common property names (`error`, `message`, `code`), so a
-// predicate still accepts them.
+// A host grammar's property can have any name, including one Lanzer uses as a keyword (`file`,
+// `output`, `not`, `message`, …), so a predicate accepts every keyword as a property name. A test
+// checks that every keyword of this grammar is listed, so a new one cannot be forgotten here.
 PropertyName returns string:
-    ID | 'error' | 'warning' | 'info' | 'code' | 'message';
+    ID
+    | 'at' | 'campaign' | 'code' | 'contains' | 'description' | 'error' | 'expect' | 'file'
+    | 'forbid' | 'generates' | 'has' | 'import' | 'in' | 'info' | 'matches' | 'message' | 'min'
+    | 'not' | 'output' | 'require' | 'run' | 'runs' | 'support' | 'warning' | 'workspace';
 
 PredicateOp returns string:
     '=' | '!=' | '^=' | '$=' | '*=';
