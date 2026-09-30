@@ -26,6 +26,7 @@ export function describeRunConfiguration(
         fixIterations,
         retryIterations,
         // Only Claude's adapter takes the setting; asked of Codex, the run is honestly not isolated.
-        isolated: transport === 'acp' && options.isolated === true
+        isolated: transport === 'acp' && options.isolated === true,
+        lanzerTools: transport === 'acp' && options.toolkit !== undefined
     };
 }

@@ -392,6 +392,10 @@ flaky — identical runs split between pass and fail, so chance moves these pass
   the suite three times under `--policy minimal --isolated` — `--no-skill`, the old skill and the
   new one (`--skill <dir>`) — and compare each skill against the baseline, then the two skills with
   each other. `plan --prompt` takes the same flags, to preview what each run is sent.
+- **Let mistakes count.** With Lanzer's `validate` tool, an agent fixes most mistakes before its turn
+  ends, so they show only as failed checks. `--no-tools` offers no tools; then a mistake the agent
+  does not catch by itself fails the run, and moves the pass rate and the failure stages. Combine it
+  with `--max-attempts 1` to leave out fix prompts too.
 - **Per run, not totals.** Cost, time, tokens, stage failures and diagnostic codes are divided by
   each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or

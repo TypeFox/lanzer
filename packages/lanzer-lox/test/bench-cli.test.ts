@@ -265,3 +265,30 @@ describe('isolating the skill: --policy minimal and --no-skill', () => {
         expect(printed()).toMatch(/skill: write-lox [0-9a-f]{12} → \(none\)/);
     });
 });
+
+describe('--no-tools', () => {
+    test('leaves Lanzer\'s tools out of the prompt', async () => {
+        vi.mocked(console.log).mockClear();
+        await cli('plan', join(suiteDir, 'alpha.lanzer'), '--prompt', '--json');
+        const offered: { prompts: { prompt: string }[] } = JSON.parse(printed());
+        vi.mocked(console.log).mockClear();
+        await cli('plan', join(suiteDir, 'alpha.lanzer'), '--prompt', '--json', '--no-tools');
+        const withheld: { prompts: { prompt: string }[] } = JSON.parse(printed());
+        expect(offered.prompts[0].prompt).toContain('mcp__lanzer__validate');
+        expect(withheld.prompts[0].prompt).not.toContain('mcp__lanzer__');
+    });
+
+    test('runs without the tool server, records it, and compare shows it', async () => {
+        const offered = join(dir, 'offered.json');
+        const withheld = join(dir, 'withheld.json');
+        await generate('print 1;', offered, join(suiteDir, 'alpha.lanzer'));
+        await generate('print 1;', withheld, join(suiteDir, 'alpha.lanzer'), '--no-tools');
+        expect((await readSuite(offered)).runs[0].configuration?.lanzerTools).toBe(true);
+        const [run] = (await readSuite(withheld)).runs;
+        expect(run.configuration?.lanzerTools).toBe(false);
+        expect(run.ok).toBe(true);
+        vi.mocked(console.log).mockClear();
+        await cli('compare', offered, withheld);
+        expect(printed()).toContain('lanzer tools: offered → none');
+    });
+});

@@ -65,6 +65,11 @@ export interface LanzerAcpOptions {
     policyMode?: LanzerPolicyMode;
     /** Offer the agent no DSL skill, for a baseline to measure a skill against. */
     noSkill?: boolean;
+    /**
+     * Offer the agent none of Lanzer's tools. With `validate`, an agent fixes its own mistakes
+     * before the end of its turn, and they never reach the pass rate; without it, they do.
+     */
+    noTools?: boolean;
     /** Progress streaming for the run. */
     progress?: {
         label?: string;
@@ -75,6 +80,11 @@ export interface LanzerAcpOptions {
 
 /** See {@link LanzerAcpOptions.policyMode}. */
 export type LanzerPolicyMode = 'full' | 'minimal';
+
+/** Whether a run offers Lanzer's tools: the transport must carry them, and the run must want them. */
+function servesTools(agent: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args' | 'noTools'>): boolean {
+    return !agent.noTools && lanzerTransportServesTools(agent);
+}
 
 /**
  * Host bindings required to run a campaign: the language's {@link LanzerService} (supplies the
@@ -135,10 +145,10 @@ async function prepareLanzerCampaign(
 export async function previewLanzerCampaignTask(
     resolved: LanzerResolvedCampaign,
     service: LanzerService,
-    agent?: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args' | 'policyMode' | 'noSkill'>
+    agent?: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args' | 'policyMode' | 'noSkill' | 'noTools'>
 ): Promise<LanzerCampaignTaskPayload> {
     const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, service, agent);
-    const tools = !agent || lanzerTransportServesTools(agent) ? LANZER_TOOL_PROMPT_NAMES : undefined;
+    const tools = !agent || servesTools(agent) ? LANZER_TOOL_PROMPT_NAMES : undefined;
     return buildLanzerCampaignTask(jobs, policy, dslSkill, tools);
 }
 
@@ -166,7 +176,7 @@ export async function runLanzerCampaign(
     // Taken before the agent starts: the skill and grammars are what the agent was given, and it
     // is not meant to change them. The prompt is built as `previewLanzerCampaignTask` builds it,
     // which a test holds equal to the one the run sends.
-    const tools = lanzerTransportServesTools(acp) ? LANZER_TOOL_PROMPT_NAMES : undefined;
+    const tools = servesTools(acp) ? LANZER_TOOL_PROMPT_NAMES : undefined;
     const prompt = normalisePrompt(buildLanzerCampaignTask(jobs, policy, dslSkill, tools).prompt, getCampaignWorkspaceRoot(resolved.campaign));
     const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill, { prompt, policy, policyMode: acp.policyMode ?? 'full' });
 
@@ -235,7 +245,8 @@ export async function runLanzerCampaign(
         permissions: acp.permissions,
         isolated: acp.isolated,
         readOnlyDirectories,
-        toolkit,
+        // Without it the run takes the path a Codex run takes: no tool server, no tools in the prompt.
+        ...(acp.noTools ? {} : { toolkit }),
         policy,
         dslSkill,
         validate,

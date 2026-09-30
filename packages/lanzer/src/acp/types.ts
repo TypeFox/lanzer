@@ -170,6 +170,11 @@ export interface LanzerRunConfiguration {
      * it was but the transport cannot do it (Codex). Absent in reports from before it existed.
      */
     isolated?: boolean;
+    /**
+     * Whether the agent was offered Lanzer's tools (`validate`, `grammar_reference`). Never over
+     * Codex's transport, and not when the run opted out. Absent in reports from before it existed.
+     */
+    lanzerTools?: boolean;
 }
 
 export interface LanzerAgentRunResult {

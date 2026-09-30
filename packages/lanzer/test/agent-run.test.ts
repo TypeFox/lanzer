@@ -203,7 +203,9 @@ describe('the session permission mode', () => {
             toolAllowlist: expect.arrayContaining(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill']),
             fixIterations: 1,
             retryIterations: 2,
-            isolated: false
+            isolated: false,
+            // This run was given no toolkit, so none was offered.
+            lanzerTools: false
         });
         // The fake agent offers no modes here, so there is no mode to record.
         expect(configuration).not.toHaveProperty('permissionMode');
