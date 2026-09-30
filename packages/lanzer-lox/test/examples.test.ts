@@ -59,7 +59,7 @@ const GEOMETRY_LIB = [
 ].join('\n');
 
 describe('shipped example campaigns against the Lox grammar', () => {
-    test.each(['hello.lanzer', 'classes.lanzer', 'factorial.lanzer', 'fizzbuzz.lanzer', 'geometry.lanzer', 'near-miss.lanzer'])('%s is valid', async (name) => {
+    test.each(['hello.lanzer', 'classes.lanzer', 'factorial.lanzer', 'fizzbuzz.lanzer', 'geometry.lanzer', 'negative.lanzer'])('%s is valid', async (name) => {
         const result = await loadLanzerDocumentFromFile(example(name), { validate: true });
         expect(result.issues).toEqual([]);
     });
@@ -119,11 +119,11 @@ describe('shipped example campaigns against the Lox grammar', () => {
     });
 });
 
-describe('near-miss.lanzer', () => {
+describe('negative.lanzer', () => {
     const TOTAL = 'fun total(a: number, b: number): number { return a + b; }';
 
     test('is met by a program making exactly the asked-for mistake', async () => {
-        const result = await solve('near-miss.lanzer', { mainFile: `${TOTAL}\nvar label: string = total(1, 2);` });
+        const result = await solve('negative.lanzer', { mainFile: `${TOTAL}\nvar label: string = total(1, 2);` });
         expect(result.documents[0]).toMatchObject({
             expectsDiagnostics: true,
             issues: [{ code: 'LOX_TYPE_NOT_ASSIGNABLE', message: "Type 'number' is not assignable to type 'string'." }]
@@ -134,7 +134,7 @@ describe('near-miss.lanzer', () => {
     });
 
     test('fails when the program is wrong in a second way too', async () => {
-        const result = await solve('near-miss.lanzer', { mainFile: `${TOTAL}\nvar label: string = total(1, 2);\nprint missing;` });
+        const result = await solve('negative.lanzer', { mainFile: `${TOTAL}\nvar label: string = total(1, 2);\nprint missing;` });
         expect(result.ok).toBe(false);
         expect(result.diagnostics?.files[0].missing).toEqual([]);
         expect(result.diagnostics?.issues).toEqual([
@@ -143,7 +143,7 @@ describe('near-miss.lanzer', () => {
     });
 
     test('fails when the program is correct, the mistake missing', async () => {
-        const result = await solve('near-miss.lanzer', { mainFile: `${TOTAL}\nvar sum: number = total(1, 2);` });
+        const result = await solve('negative.lanzer', { mainFile: `${TOTAL}\nvar sum: number = total(1, 2);` });
         expect(result.ok).toBe(false);
         expect(result.diagnostics?.issues).toEqual([
             expect.stringMatching(/main\.lox: \[missing diagnostic\] expected an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching .+, but the language reported none$/)
@@ -151,7 +151,7 @@ describe('near-miss.lanzer', () => {
     });
 
     test('fails when a different mistake stands in for the asked-for one', async () => {
-        const result = await solve('near-miss.lanzer', { mainFile: `${TOTAL}\nvar sum: number = total(1);` });
+        const result = await solve('negative.lanzer', { mainFile: `${TOTAL}\nvar sum: number = total(1);` });
         expect(result.ok).toBe(false);
         expect(result.diagnostics?.files[0].missing).toHaveLength(1);
         expect(result.diagnostics?.files[0].unexpected.map((issue) => issue.code)).toEqual(['LOX_ARITY_MISMATCH']);

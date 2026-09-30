@@ -10,12 +10,12 @@ import { createLanzerLoxServices } from '../src/lox-host.js';
 const LOX_GRAMMAR = fileURLToPath(new URL('../../langium-lox/langium/src/language-server/lox.langium', import.meta.url));
 
 /** A one-file Lox campaign whose `main.lox` must meet the given expectation lines. */
-async function nearMiss(expectations: string, program?: string): Promise<LanzerResolvedCampaign> {
-    const dir = await mkdtemp(join(tmpdir(), 'lanzer-near-miss-'));
+async function negativeCampaign(expectations: string, program?: string): Promise<LanzerResolvedCampaign> {
+    const dir = await mkdtemp(join(tmpdir(), 'lanzer-negative-'));
     const campaignFile = join(dir, 'campaign.lanzer');
     await writeFile(campaignFile, [
         `import ${JSON.stringify(LOX_GRAMMAR)}`,
-        'campaign nearMiss {',
+        'campaign negativeFile {',
         '    workspace "ws"',
         `    file main at "main.lox" generates LoxProgram { ${expectations} }`,
         '}'
@@ -29,9 +29,9 @@ async function nearMiss(expectations: string, program?: string): Promise<LanzerR
     return resolved.resolvedCampaigns[0];
 }
 
-describe('Lox near-miss files', () => {
+describe('Lox negative files', () => {
     test('see the warnings an ordinary file is forgiven', async () => {
-        const campaign = await nearMiss(
+        const campaign = await negativeCampaign(
             'expect warning code "LOX_INCOMPARABLE_TYPES" message contains "always return"',
             'var same: boolean = 1 == "one";'
         );
@@ -42,7 +42,7 @@ describe('Lox near-miss files', () => {
     });
 
     test('an ordinary file still passes with that warning', async () => {
-        const campaign = await nearMiss('', 'var same: boolean = 1 == "one";');
+        const campaign = await negativeCampaign('', 'var same: boolean = 1 == "one";');
         const { CampaignRunner } = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer;
         const result = await CampaignRunner.validateCampaign(campaign.request);
         expect(result.documents[0].issues).toEqual([]);
@@ -51,7 +51,7 @@ describe('Lox near-miss files', () => {
     });
 
     test('a code Lox never reports is rejected before any agent starts', async () => {
-        const campaign = await nearMiss('expect error code "LOX_NO_SUCH_THING"');
+        const campaign = await negativeCampaign('expect error code "LOX_NO_SUCH_THING"');
         const { Lanzer } = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer;
         await expect(previewLanzerCampaignTask(campaign, Lanzer)).rejects.toThrow(
             /expects diagnostic code\(s\) the host never reports: LOX_NO_SUCH_THING\. Known codes: LOX_UNRESOLVED_REFERENCE, /
@@ -59,7 +59,7 @@ describe('Lox near-miss files', () => {
     });
 
     test('a code Lox reports is accepted', async () => {
-        const campaign = await nearMiss('expect error code "LOX_TYPE_NOT_ASSIGNABLE"');
+        const campaign = await negativeCampaign('expect error code "LOX_TYPE_NOT_ASSIGNABLE"');
         const { Lanzer } = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer;
         const task = await previewLanzerCampaignTask(campaign, Lanzer);
         expect(task.prompt).toContain('- an error with code "LOX_TYPE_NOT_ASSIGNABLE"');

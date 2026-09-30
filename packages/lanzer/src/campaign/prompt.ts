@@ -428,7 +428,7 @@ function appendCampaignWideRequirements(lines: string[], requirements: LanzerReq
 }
 
 /**
- * What a near-miss file must be rejected with.
+ * What a negative file must be rejected with.
  *
  * An agent's every instinct is to write valid code, so the contract is stated as the goal rather
  * than as a list of findings: one deliberate mistake, the file otherwise correct, and no second
@@ -438,7 +438,7 @@ function appendExpectedDiagnostics(lines: string[], diagnostics: LanzerDiagnosti
     if (diagnostics.length === 0) {
         return;
     }
-    lines.push(`${indent}expected diagnostics — this file is a deliberate near-miss. The language MUST report:`);
+    lines.push(`${indent}expected diagnostics — this is a negative file, almost right and wrong in exactly these ways. The language MUST report:`);
     for (const expectation of diagnostics) {
         lines.push(`${indent}- ${describeDiagnosticExpectation(expectation)}`);
     }

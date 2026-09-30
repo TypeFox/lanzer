@@ -174,7 +174,7 @@ starts from — a generated file, or a `support` file the campaign provides:
 - The agent sees the expected output. Pair it with requirements that force the computation (e.g.
   `require FunctionDeclaration[name="factorial"]`) so printing the literal answer is not enough.
 
-## Near-miss files: expected diagnostics
+## Negative files: expected diagnostics
 
 To test a language's validator rather than its happy path, a `file` block can say which
 diagnostics the language must reject it with. The agent then writes a program that is almost right
@@ -196,13 +196,13 @@ and wrong in exactly that way:
 - `message` compares like `expect output`: exact with no mode, `contains`, or `matches` (a regex;
   backslashes doubled). Use a regex when the message names something the agent picks.
 - Each line must be met by at least one diagnostic. Any **error** no line accounts for fails the
-  file — a near-miss is wrong in one way, not two. Unasked warnings and infos are ignored.
+  file — a negative file is wrong in one way, not two. Unasked warnings and infos are ignored.
 - Parse errors are errors like any other: expect the host's parser-error code or message.
 - Codes are the host's own. Lanzer cannot list them while you write the campaign, so `validate`
   checks only the shape; a host that lists its codes (Lox does) rejects an unknown one before a
   generation run starts.
-- Requirements still apply to a near-miss file, and every other generated file must stay valid.
-- A campaign with a near-miss file cannot have `run` blocks: its workspace is invalid on purpose.
+- Requirements still apply to a negative file, and every other generated file must stay valid.
+- A campaign with a negative file cannot have `run` blocks: its workspace is invalid on purpose.
 - A mismatch is reported at the `diagnostics` stage, listing what was expected, what was missing,
   and which errors came out instead.
 
@@ -324,5 +324,5 @@ is the same for any host language):
 - `references/fizzbuzz.lanzer` — a `run` block using every kind of `expect`
 - `packages/lanzer-lox/examples/geometry.lanzer` — a `run` from a provided test driver (a support
   file that calls the generated code), so the check is on return values, not chosen prints
-- `packages/lanzer-lox/examples/near-miss.lanzer` — a near-miss file that must fail with one
+- `packages/lanzer-lox/examples/negative.lanzer` — a negative file that must fail with one
   expected error

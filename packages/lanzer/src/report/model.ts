@@ -34,7 +34,7 @@ export const LANZER_RUN_STAGE_DESCRIPTIONS: Readonly<Record<LanzerRunStage, stri
     no_output: 'a required file was never written',
     syntax: 'a generated file does not parse',
     semantics: 'a generated file parses but the language rejects it',
-    diagnostics: 'a near-miss file is not rejected the way the campaign expects',
+    diagnostics: 'a negative file is not rejected the way the campaign expects',
     requirements: 'the files are valid but the campaign requirements are unmet',
     behaviour: 'the program runs, but not the way the campaign expects',
     scope: 'files outside the declared set were written or modified'
@@ -49,7 +49,7 @@ export interface LanzerReportFile {
 export interface LanzerIssueTally {
     total: number;
     /**
-     * Occurrences per diagnostic code. Uncoded issues are counted under `(uncoded)`. A near-miss
+     * Occurrences per diagnostic code. Uncoded issues are counted under `(uncoded)`. A negative
      * file's expected diagnostics are left out: they are the file working, not a failure.
      */
     byCode: Record<string, number>;
@@ -61,8 +61,8 @@ export interface LanzerReportDocument {
     uri: string;
     issues: LanzerDocumentIssue[];
     /**
-     * Set for a near-miss file: its issues are what it was meant to be rejected with, judged by
-     * {@link LanzerRunReport.nearMisses}, not failures in themselves.
+     * Set for a negative file: its issues are what it was meant to be rejected with, judged by
+     * {@link LanzerRunReport.negativeFiles}, not failures in themselves.
      */
     expectsDiagnostics?: boolean;
 }
@@ -88,8 +88,8 @@ export interface LanzerRunReport {
      * counted them could tell you a run failed with three `LOX_TYPE_NOT_ASSIGNABLE` and not where.
      */
     documents: LanzerReportDocument[];
-    /** Each near-miss file: what it had to be rejected with, what was missing, what came out instead. */
-    nearMisses: LanzerDiagnosticsOutcome[];
+    /** Each negative file: what it had to be rejected with, what was missing, what came out instead. */
+    negativeFiles: LanzerDiagnosticsOutcome[];
     /** Requirement and workspace failures, which are Lanzer's own rather than the language's. */
     campaignIssues: string[];
     workspaceIssues: string[];

@@ -29,7 +29,7 @@ export interface LanzerFileSpec {
     requirements: LanzerRequirementSpec[];
     /**
      * The diagnostics the language must reject this file with. Empty for an ordinary file, which
-     * must come out clean; non-empty makes it a deliberate near-miss.
+     * must come out clean; non-empty makes it a negative file.
      */
     diagnostics: LanzerDiagnosticExpectation[];
 }
@@ -40,7 +40,7 @@ export const LANZER_DIAGNOSTIC_SEVERITIES = ['error', 'warning', 'info'] as cons
 export type LanzerDiagnosticSeverity = (typeof LANZER_DIAGNOSTIC_SEVERITIES)[number];
 
 /**
- * One diagnostic a near-miss file must produce: of this severity, and with this code and message
+ * One diagnostic a negative file must produce: of this severity, and with this code and message
  * where given. Both hold for the same diagnostic.
  */
 export interface LanzerDiagnosticExpectation {

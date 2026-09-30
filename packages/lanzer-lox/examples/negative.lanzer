@@ -5,7 +5,7 @@ import "../../langium-lox/langium/src/language-server/lox.langium"
 
 campaign typeMismatchLox {
     description "A small, otherwise correct program that stores a value of the wrong type in a typed variable."
-    workspace "test/near-miss"
+    workspace "test/negative"
 
     file mainFile at "src/main.lox" generates LoxProgram {
         description "A function computing a total, whose result is assigned to a variable declared with a different type."

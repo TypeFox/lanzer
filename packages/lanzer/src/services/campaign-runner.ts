@@ -2,7 +2,7 @@ import type { LangiumDocument } from 'langium';
 import type { LangiumServices, LangiumSharedServices } from 'langium/lsp';
 import { diagnosticCode } from '../util/guards.js';
 import { validateBehaviour } from '../validations/behaviour-validations.js';
-import { findNearMissDocuments, validateDiagnostics } from '../validations/diagnostic-validations.js';
+import { findNegativeFileDocuments, validateDiagnostics } from '../validations/diagnostic-validations.js';
 import type {
     LanzerCampaignRunRequest,
     LanzerCampaignRunner,
@@ -34,11 +34,11 @@ export class DefaultLanzerCampaignRunner<
         });
 
         const collected = documents.map((document) => this.collectDocumentResult(document));
-        // A near-miss file keeps every issue it produced: those are what its expectations are
+        // A negative file keeps every issue it produced: those are what its expectations are
         // matched against, warnings included. Any other file must come out clean, by the host's
         // measure of clean.
-        const nearMisses = request.campaign ? findNearMissDocuments(request.campaign, documents) : new Map();
-        const results = collected.map((result, index): LanzerDocumentResult => nearMisses.has(index)
+        const negativeFiles = request.campaign ? findNegativeFileDocuments(request.campaign, documents) : new Map();
+        const results = collected.map((result, index): LanzerDocumentResult => negativeFiles.has(index)
             ? { ...result, expectsDiagnostics: true }
             : { ...result, issues: result.issues.filter((issue) => this.failsCleanFile(issue)) });
         const diagnostics = request.campaign ? validateDiagnostics(request.campaign, documents, results) : undefined;
@@ -69,7 +69,7 @@ export class DefaultLanzerCampaignRunner<
     /**
      * Whether an issue on an ordinary file makes it unacceptable. Every issue does by default; a
      * host that tolerates warnings in generated code narrows this rather than dropping them in
-     * {@link collectDocumentResult}, which would hide them from near-miss files expecting one.
+     * {@link collectDocumentResult}, which would hide them from negative files expecting one.
      */
     protected failsCleanFile(_issue: LanzerDocumentIssue): boolean {
         return true;

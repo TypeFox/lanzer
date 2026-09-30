@@ -167,7 +167,7 @@ export async function runLanzerCampaign(
         lastVerdict = result;
         const issues: string[] = [];
         for (const doc of result.documents) {
-            // A near-miss file's diagnostics are its goal, not its faults: only the mismatches
+            // A negative file's diagnostics are its goal, not its faults: only the mismatches
             // below are for the agent to fix.
             if (doc.expectsDiagnostics) continue;
             for (const issue of doc.issues) {
