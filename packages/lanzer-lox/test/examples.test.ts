@@ -1,12 +1,15 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { readdirSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NodeFileSystem } from 'langium/node';
 import { describe, expect, test } from 'vitest';
 import {
     buildLanzerGenerationJobs,
+    getCampaignFileAbsolutePath,
     loadLanzerDocumentFromFile,
+    resolveLanzerCampaign,
     resolveLanzerCampaignFile,
     type LanzerCampaignValidationResult
 } from 'lanzer';
@@ -19,11 +22,22 @@ function example(name: string): string {
 /**
  * Write `sources` (by file alias) as the generated files of a shipped example, then run the full
  * campaign check on them — validation, requirements and behaviour — as a generation run would.
+ *
+ * The campaign is the shipped one, but its workspace is moved to a fresh temporary folder holding
+ * only its declared support files: the example's own workspace is where `generate` writes a real
+ * agent's output, and a test writing there would replace it.
  */
 async function solve(name: string, sources: Record<string, string>): Promise<LanzerCampaignValidationResult> {
     const resolved = await resolveLanzerCampaignFile(example(name), { validate: true });
     expect(resolved.issues).toEqual([]);
-    const [campaign] = resolved.resolvedCampaigns;
+    const shipped = resolved.resolvedCampaigns[0].campaign;
+    const workspace = await mkdtemp(join(tmpdir(), `lanzer-example-${name.replace(/\.lanzer$/, '')}-`));
+    for (const file of shipped.supportFiles) {
+        const target = join(workspace, file.path);
+        await mkdir(dirname(target), { recursive: true });
+        await copyFile(getCampaignFileAbsolutePath(shipped, file), target);
+    }
+    const campaign = resolveLanzerCampaign({ ...shipped, workspaceRoot: workspace });
     for (const job of buildLanzerGenerationJobs(campaign)) {
         const source = sources[job.fileAlias];
         if (source === undefined) {
@@ -155,6 +169,34 @@ describe('negative.lanzer', () => {
         expect(result.ok).toBe(false);
         expect(result.diagnostics?.files[0].missing).toHaveLength(1);
         expect(result.diagnostics?.files[0].unexpected.map((issue) => issue.code)).toEqual(['LOX_ARITY_MISMATCH']);
+    });
+});
+
+describe('solving an example', () => {
+    /** Every file under `examples/`, with its size and modification time. */
+    function snapshotExamples(): Record<string, string> {
+        const root = example('');
+        const files: Record<string, string> = {};
+        const walk = (dir: string): void => {
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                const path = join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    walk(path);
+                } else {
+                    const stats = statSync(path);
+                    files[relative(root, path)] = `${stats.size}@${stats.mtimeMs}`;
+                }
+            }
+        };
+        walk(root);
+        return files;
+    }
+
+    test('leaves the examples folder, where generate writes, untouched', async () => {
+        const before = snapshotExamples();
+        await solve('fizzbuzz.lanzer', { mainFile: fizzbuzzProgram([[3, 'Fizz'], [5, 'Buzz'], [15, 'FizzBuzz']]) });
+        await solve('geometry.lanzer', { lib: GEOMETRY_LIB });
+        expect(snapshotExamples()).toEqual(before);
     });
 });
 
