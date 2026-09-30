@@ -1,19 +1,40 @@
 # Lanzer
-> An agent-driven Fuzzer for Langium based DSL
+> Spec-driven program generation for Langium DSLs: measure how well coding agents write your
+> language, and build a corpus of valid, checked programs.
 
 <p align="center">
   <img src="assets/lanzer.webp" alt="Lanzer" width="600">
 </p>
 
 ## What is Lanzer
-Lanzer is a semiformal DSL and tools around it, for generating samples, for your DSL.
-The DSL is used as a specification for the samples you want to generate, with formal constraints imposed on the output, and an informal description of what the sample should do.
+Lanzer is a small semiformal campaign language, and the tools around it, for asking a coding agent to write
+programs in your Langium DSL and checking what comes back. A campaign is the spec: an informal
+description of what the program should do, plus formal constraints on the result: constructs it
+must and must not contain (selectors over your grammar's AST), what it must print when run (optional), and,
+for a negative file, the diagnostic it must be rejected with.
 
+Lanzer is used three ways:
+
+1.**Generating examples and a corpus from a spec.** A sample that passes is valid in your
+   language and meets its campaign: it uses what it was asked to, avoids what it was told not to,
+   and, when run, prints what was expected. Useful for documentation examples, test fixtures and
+   training data.  
+2. **Stress-testing the language implementation.** `run` blocks execute the generated program
+   through your host's execute handler and check its output, and negative campaigns ask for
+   programs your validator must reject with a specific diagnostic. Both surface places where the
+   language does not behave the way its authors, or its documentation, say it does.
+3. **Evaluating how well agents write your DSL.** Run a suite of campaigns, several times each,
+   and get a pass rate per campaign and the first stage each failure reached: `syntax` says the
+   grammar reference is not landing, `semantics` that the DSL skill is too weak, `requirements` or
+   `behaviour` that the task itself is hard. `compare` puts two reports side by side to answer "did
+   v2 of the skill help?" or "Claude or Codex on this language?" — see
+   [Benchmarking a skill or an agent](#benchmarking-a-skill-or-an-agent).
+   
 ```
 import "mylang.langium"
 
 campaign sortingDemo {
-  description "Sort an array of integers."
+  description "Sort the integers 5, 3, 8, 1, 2 and print them in order, one per line."
   workspace "test/test-cases/hello-world"
 
   file sortFile at "src/sort.tc" generates Module {
@@ -27,23 +48,43 @@ campaign sortingDemo {
     require FnDecl[name="main"] >> FunctionCall
     forbid FnDecl[name="eval"]
   }
+
+  run mainFile {
+    expect runs
+    expect output "1\n2\n3\n5\n8\n"
+  }
 }
 ```
 
 
 ## How it works
-`Lanzer` allows you generate positive samples, for your DSL, it can be used for a variety of cases ranging from stress testing language implementation (and your runtime potentially), generating code examples or even testing your DSL agent skill.
+Lanzer sends the campaign to a coding agent you already have, works with anything that speaks the Agent
+Client Protocol (Claude Code, Gemini CLI, …) or Codex, together with your grammar reference and
+your DSL's agent skill. The agent writes the files; Lanzer then checks them with your language's own
+parser and validator, the campaign's selectors, and, for `run` blocks, your execute handler. While
+it works, the agent can call Lanzer's `validate` tool to check itself; if its turn still ends with
+problems, Lanzer sends them back as a fix prompt.
 
-The CLI allows you to use any coding agent you have installed, to generate code, making sure that the generated output is not only a valid document, but also adheres to the fixture.
+Every run produces a report that names the first stage that failed — the file was never written,
+it does not parse, the language rejects it, a negative file is not rejected as expected, the
+requirements are unmet, the program misbehaves, or files outside the declared set were touched —
+with every diagnostic, the agent's configuration, and its token and cost usage.
+
+### Lanzer and grammar fuzzing
+Grammar-based fuzzers derive inputs from the grammar's rules, thousands a second, and most of them
+make no sense past the parser. They are the right tool for parser robustness at volume, and Lanzer
+does not replace them. Lanzer works on the layer they cannot reach: programs that parse,
+type-check, resolve their references and do something specific, which is where an agent writing
+your language, or the language's own validator and runtime, actually goes wrong. Use a fuzzer for
+the parser and Lanzer for what comes after it.
 
 ## Requirements
 To leverage lanzer, you need:
-- Fully functional langium-based DSL implementation (with validations too).
+- A functional langium-based DSL implementation (with validations too).
 - An ACP compatible coding agent (claude code, codex, gemini cli, etc)
-- An agent skill for your DSL (see more on how to generate an agent skill for your dsl here. TODO: Link langium AI)
+- An agent skill for your DSL (You can start with something basic, and improve it with Lanzer)
 - A small host integration package that plugs your language into Lanzer (a service supplying your
-  generation policy + DSL skill). Your language itself stays **unmodified** — see **Plugging in your
-  own DSL** below.
+  generation policy + DSL skill).
 
 ## Run the demo
 
@@ -87,39 +128,6 @@ Lanzer campaign is invalid: file:///…/packages/lanzer-lox/examples/invalid-dem
 - [diagnostic] @ 12:37 Type 'FunctionDeclaration' has no property 'notAProp'.
 ```
 
-### Finding type names
-
-Selectors name the grammar's AST **types**, which are not always the rule names you see in the
-surface syntax: a rule can produce another type (`Assignment infers Expression`), and a union
-(`LoxElement`) stands for several. `types` lists every name a selector can use, from a campaign's
-imported grammars or a `.langium` file directly, with its properties (a cross-reference names its
-target), what it can be, and what can appear directly inside it (what `>` reaches). `--json` gives
-the same as data.
-
-```shell
-node ./bin/lox-lanzer.js types ./examples/hello.lanzer
-```
-
-```text
-FunctionDeclaration  (parser rule)
-  properties: body, name, parameters, returnType
-  direct children: ExpressionBlock, Parameter, TypeReference
-Assignment  (parser rule, matches 'Expression' nodes)
-  …
-MemberCall  (parser rule)
-  properties: arguments, element -> NamedElement, explicitOperationCall, previous
-  direct children: Expression
-```
-
-`validate` also suggests the likely fix for the common slips: a mistyped type or property, and a
-direct child (`>`) that is really a descendant:
-
-```text
-- [diagnostic] @ 5:17 Could not resolve reference to AbstractRule named 'FunctionDeclaraton'. Did you mean 'FunctionDeclaration'?
-- [diagnostic] @ 6:37 Type 'FunctionDeclaration' has no property 'nmae'. Did you mean 'name'?
-- [diagnostic] @ 7:39 'MemberCall' is not reachable as a direct child of 'FunctionDeclaration' in the imported grammar. It is a descendant, though, via 'ExpressionBlock' > 'LoxElement': use '>>'.
-```
-
 ### Generating from a campaign
 
 Once a campaign is valid, generate the target `.lox` file(s) by dispatching it to your configured
@@ -159,7 +167,10 @@ node ./bin/lox-lanzer.js plan     ./examples/hello.lanzer
 node --env-file=.env ./bin/lox-lanzer.js generate  ./examples/hello.lanzer
 ```
 
-#### What the agent is allowed to do
+#### Agent Permissions & Security
+
+In doubt, use dev-containers or agent isolation mechanisms, this is even more critical, if you generate
+fixtures you using agents at scale. Lanzer does it best, but the chances for agents to go rogue is not-zero.
 
 A generation run is unattended, so the agent gets what writing files needs and nothing more:
 `read`, `edit`, `search`, `think`, and `other` (which is where agents put skill loading). Running
@@ -186,13 +197,6 @@ Claude today the limits are:
   `edit`, `default` otherwise. Lanzer always refuses Claude's `bypassPermissions` mode, even when
   your own Claude settings default to it.
 
-Tightening the path confinement for Claude is open work, starting with a real run to show how far
-these limits reach. Withholding `execute` stays essential either way: an agent with a shell steps around
-every one of these checks.
-
-A declared target that already exists when the run starts has to be rewritten by the agent: one left
-untouched fails the run as `no_output`, since passing validation says nothing about a file the agent
-never produced.
 
 Widen or narrow it with `LANZER_ACP_ALLOW`, or per-run:
 
@@ -213,100 +217,6 @@ runtime — Claude's `Bash`/`Edit` mean nothing to Codex, and a policy that sile
 under another agent would be worse than none. One consequence is honest about its limits: the Codex
 MCP transport has no permission callback, and its sandbox cannot separate running commands from
 writing files, so a run there warns that `execute` is not enforced.
-
-#### What the agent can call
-
-During a run Lanzer serves the agent a small toolkit **in-process** — no subprocess, no external
-MCP server. The agent connects back over a loopback port guarded by a per-run token:
-
-- `validate` — parse errors, language diagnostics, and campaign requirements, run through the
-  **same `CampaignRunner` that grades the run**. There is no second implementation to drift, and a
-  `VALID` answer to the agent is the answer Lanzer will give.
-- `grammar_reference` — the generated BNF for the target language.
-
-Both are backed by services a host integration already implements, so nothing new is asked of a
-host author. A run without them behaves exactly as before.
-
-#### Checking behaviour
-
-Requirements say what the generated code *is*; a `run` block says what it must *do*. Name a
-declared file as the program's entry, and state what running it must produce:
-
-```
-campaign factorialLox {
-    description "Print the factorials of 1 through 5, computed by a recursive function."
-    workspace "test/factorial"
-
-    file mainFile at "src/main.lox" generates LoxProgram {
-        require FunctionDeclaration[name="factorial"]
-    }
-
-    run mainFile {
-        expect runs                          // finishes: no runtime error, no timeout
-        expect output "1\n2\n6\n24\n120\n"    // exact (trailing whitespace ignored)
-        expect output contains "120"         // substring
-        expect output matches "^1\\n"         // regex over the whole output
-        expect not output contains "nil"     // `not` inverts any output check
-    }
-}
-```
-
-`run` names the file the program starts from — a generated file, or a `support` file the campaign
-provides, such as a fixed driver that calls the generated code and prints what it returns. The name
-is a reference: one that is not a declared file is a Lanzer error at `validate`. A support file used
-as an entry is protected: if the agent changes it, the run fails. The host is given the whole
-workspace along with the entry, so a program may span files: an interpreter runs the entry with the
-other files' definitions in scope, a compiled language builds the workspace and treats the entry as
-its main.
-
-Once the files are valid, Lanzer runs each program through the host language and checks every
-expectation; a miss fails the run at the `behaviour` stage, with the expected and actual output in
-the fix prompt and in the agent's `validate` tool. The agent sees the expected output up front, so
-pair it with requirements that make it compute rather than print the answer. A host runs programs
-by implementing `execute` on its service (see [Plugging in your own DSL](#plugging-in-your-own-dsl));
-Lox runs them in-process with its interpreter. A campaign with `run` blocks against a host that
-cannot run programs fails rather than passing unchecked.
-
-Examples, each tested to pass with a correct program and to fail with a wrong one:
-[`factorial.lanzer`](packages/lanzer-lox/examples/factorial.lanzer) (requirements force recursion),
-[`fizzbuzz.lanzer`](packages/lanzer-lox/examples/fizzbuzz.lanzer) (every kind of `expect`), and
-[`geometry.lanzer`](packages/lanzer-lox/examples/geometry.lanzer), whose run starts from a provided
-[test driver](packages/lanzer-lox/examples/geometry/driver.lox) that calls the generated library.
-
-#### Checking diagnostics: negative files
-
-To test a language's validator rather than its happy path, a `file` block can say which diagnostics
-the language must reject it with. The agent then writes a program that is almost right and wrong in
-exactly that way:
-
-```
-file mainFile at "src/main.lox" generates LoxProgram {
-    require VariableDeclaration
-    expect error code "LOX_TYPE_NOT_ASSIGNABLE"
-    expect error message matches "^Duplicate identifier '\\w+'"   // names the agent picks
-    expect error code "DUP" message contains "declared twice"      // both, on one diagnostic
-    expect warning message contains "unused"
-    expect info code "STYLE_HINT"
-}
-```
-
-- The severity is `error`, `warning` or `info`, and each line gives a `code`, a `message`, or both;
-  with both, a single diagnostic must carry the code and match the message.
-- `message` compares like `expect output`: exact with no mode, `contains`, or `matches` (a regex).
-  Use a regex when the message names something the agent chooses.
-- Each line must be met by at least one diagnostic. An **error** no line accounts for fails the
-  file, since a negative file is wrong in one way, not two; warnings and infos nobody asked for are
-  ignored. Parse errors are errors like any other.
-- Requirements still apply to a negative file, and every other generated file must stay valid. A
-  campaign with a negative file cannot have `run` blocks: its workspace is invalid on purpose.
-- Codes are the host's own, so `validate` checks only the shape of the line. A host that lists its
-  codes (Lox does) rejects an unknown one before any agent starts.
-
-The prompt asks the agent for exactly the listed mistake; fix prompts and the `validate` tool report
-only what is missing or unexpected, never the intended diagnostics themselves. A mismatch fails the
-run at the `diagnostics` stage. Example, tested to pass on the intended mistake and to fail on an
-extra error, a missing one, or a different one:
-[`negative.lanzer`](packages/lanzer-lox/examples/negative.lanzer).
 
 #### Reports
 
@@ -354,18 +264,6 @@ instead:
     missing: an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching /^Type '\w+' is not assignable to type '\w+'/
     unexpected:2:19: [LOX_ARITY_MISMATCH] Expected 2 argument(s) but got 1.
 ```
-
-Every report also records how the run was configured: the agent's own name and version, the model
-and effort, the permission mode the session ran in (the sandbox, for Codex), the allowed tool kinds
-and the fix and retry budgets. The summary shows it on one line, e.g. `agent:
-@agentclientprotocol/claude-agent-acp 0.82.0, model sonnet, effort medium, mode acceptEdits`, so two
-runs of the same campaign can be told apart.
-
-The JSON adds per-run token/cost accounting, every tool call with timings, and diagnostics counted
-by code — so a suite run answers "how many succeeded, and where did the rest fail" directly. Its
-`negativeFiles` field holds the same expected, missing and unexpected lists for each negative file,
-and a negative file's entry in `documents` is marked `expectsDiagnostics`, since the diagnostics
-listed there are the ones it was meant to produce.
 
 #### Repeating runs
 
@@ -542,10 +440,6 @@ export const createLanzerLoxServices = (context) => createLanzerHostServices(con
   campaignRunner: (services) => new LoxLanzerCampaignRunner(services),
 });
 ```
-
-Returning the finished services rather than the raw modules is what makes the result properly typed:
-`THost` is inferred from what `createServices` returns, so `createLanzerHostServices(...)` gives you
-`LanzerHostServices<LoxServices>` with no type argument and no cast.
 
 **3. A driver** — a one-call wrapper ([`run-campaign.ts`](packages/lanzer-lox/src/run-campaign.ts))
 and/or a CLI ([`cli.ts`](packages/lanzer-lox/src/cli.ts)) on top of the container.
