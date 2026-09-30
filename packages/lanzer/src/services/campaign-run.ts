@@ -3,8 +3,10 @@ import {
     LanzerRunStageError,
     lanzerTransportServesTools,
     runLanzerCampaignTaskOverAcp,
-    type LanzerAgentRunResult
+    type LanzerAgentRunResult,
+    type RunLanzerAgentTaskOptions
 } from '../acp/run.js';
+import { describeRunConfiguration } from '../acp/configuration.js';
 import { buildLanzerCampaignTask, type LanzerCampaignTaskPayload } from '../campaign/prompt.js';
 import type { LanzerGenerationJob } from '../campaign/jobs.js';
 import {
@@ -189,28 +191,30 @@ export async function runLanzerCampaign(
         ...(dslSkill?.path ? [dslSkill.path] : [])
     ];
 
+    const runOptions: RunLanzerAgentTaskOptions = {
+        command: acp.command,
+        args: acp.args,
+        cwd: acp.cwd,
+        env: acp.env,
+        provider: acp.provider,
+        model: acp.model,
+        effort: acp.effort,
+        maxAttempts: acp.maxAttempts,
+        fixIterations: acp.fixIterations,
+        retryIterations: acp.retryIterations,
+        permissions: acp.permissions,
+        readOnlyDirectories,
+        toolkit,
+        policy,
+        dslSkill,
+        validate,
+        progress: acp.progress
+    };
+
     const startedAtMs = Date.now();
     let run: LanzerAgentRunResult;
     try {
-        run = await runLanzerCampaignTaskOverAcp(jobs, {
-            command: acp.command,
-            args: acp.args,
-            cwd: acp.cwd,
-            env: acp.env,
-            provider: acp.provider,
-            model: acp.model,
-            effort: acp.effort,
-            maxAttempts: acp.maxAttempts,
-            fixIterations: acp.fixIterations,
-            retryIterations: acp.retryIterations,
-            permissions: acp.permissions,
-            readOnlyDirectories,
-            toolkit,
-            policy,
-            dslSkill,
-            validate,
-            progress: acp.progress
-        });
+        run = await runLanzerCampaignTaskOverAcp(jobs, runOptions);
     } catch (error) {
         // A run that never produced a result is still a run to report: the stage it stopped at is
         // the useful part, and letting it throw would lose every other campaign in the same file.
@@ -219,6 +223,8 @@ export async function runLanzerCampaign(
         }
         const failed: LanzerAgentRunResult = {
             task: buildLanzerCampaignTask(jobs, policy, dslSkill),
+            // Only what the options decide: the agent was never reached to say more.
+            configuration: describeRunConfiguration(runOptions, lanzerTransportServesTools(runOptions) ? 'acp' : 'codex-mcp'),
             sessionId: '',
             attempts: 0,
             stopReason: 'error',

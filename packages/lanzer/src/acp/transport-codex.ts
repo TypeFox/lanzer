@@ -7,12 +7,13 @@ import type { LanzerTaskPayload } from '../campaign/prompt.js';
 import { isRecord } from '../util/guards.js';
 import { mergeUsage, runAttemptLoop } from './attempts.js';
 import { RecordingClient, type FileAccessRoots } from './client.js';
+import { describeRunConfiguration } from './configuration.js';
 import type { LanzerFileSetResult } from './file-set.js';
 import { resolvePermissionPolicy, type LanzerPermissionPolicy } from './permissions.js';
 import { emitRunProgress } from './progress.js';
 import { sanitizeSpawnEnv } from './spawn-env.js';
 import { atStage, type StageTracker } from './stages.js';
-import type { LanzerAgentRunResult, LanzerAgentRunUpdate, LanzerAgentUsage, LanzerAgentValidationResult, RunLanzerAgentTaskOptions } from './types.js';
+import type { LanzerAgentRunResult, LanzerAgentRunUpdate, LanzerAgentUsage, LanzerAgentValidationResult, LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.js';
 
 type JsonScalar = string | number | boolean | null;
 type JsonValue = JsonScalar | JsonObject | JsonValue[];
@@ -124,6 +125,12 @@ export async function executeLanzerTaskOverCodex(
         await atStage(stage, 'launch', () => mcpClient.connect(transport, {
             timeout: 300_000
         }));
+        const server = mcpClient.getServerVersion();
+        const configuration: LanzerRunConfiguration = {
+            ...describeRunConfiguration(options, 'codex-mcp'),
+            ...(server ? { agent: { name: server.name, version: server.version } } : {}),
+            permissionMode: codexSandbox(permissions)
+        };
 
         const outcome = await runAttemptLoop(task, options, {
             // Every call is its own conversation, so a session is only a label for the attempt log.
@@ -153,6 +160,7 @@ export async function executeLanzerTaskOverCodex(
 
         return {
             task,
+            configuration,
             sessionId: outcome.lastSessionId,
             attempts: outcome.attempts,
             stopReason: outcome.stopReason,
@@ -242,13 +250,18 @@ function buildCodexToolArguments(
         // Codex's sandbox is the only permission dial this transport has, and it is coarser
         // than the policy: `workspace-write` covers running commands as well as writing files.
         // Withholding `edit` is the one distinction it can honour.
-        sandbox: permissions.allowed.has('edit') ? 'workspace-write' : 'read-only',
+        sandbox: codexSandbox(permissions),
         'approval-policy': 'never'
     };
     if (options.model) {
         args.model = options.model;
     }
     return args;
+}
+
+/** The Codex sandbox a policy maps to: the only permission setting this transport has. */
+function codexSandbox(permissions: LanzerPermissionPolicy): 'workspace-write' | 'read-only' {
+    return permissions.allowed.has('edit') ? 'workspace-write' : 'read-only';
 }
 
 function buildCodexBaseInstructions(task: LanzerTaskPayload): string {

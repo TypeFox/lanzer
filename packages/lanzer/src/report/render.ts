@@ -1,3 +1,4 @@
+import type { LanzerRunConfiguration } from '../acp/run.js';
 import type { LanzerRunReport, LanzerSuiteReport } from './model.js';
 
 /** Enough to act on without burying the summary; the report file keeps the rest. */
@@ -23,6 +24,19 @@ function rankCounts(counts: Record<string, number>): Array<[string, number]> {
     return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 
+/** Which agent ran and how, in one line: enough to tell two runs of the same campaign apart. */
+function describeConfiguration(configuration: LanzerRunConfiguration): string {
+    const agent = configuration.agent
+        ? `${configuration.agent.name} ${configuration.agent.version}`
+        : [configuration.command, ...configuration.args].join(' ');
+    const bits = [`agent: ${agent}`];
+    if (configuration.model) bits.push(`model ${configuration.model}`);
+    if (configuration.effort) bits.push(`effort ${configuration.effort}`);
+    const mode = configuration.transport === 'codex-mcp' ? 'sandbox' : 'mode';
+    bits.push(`${mode} ${configuration.permissionMode ?? '(none)'}`);
+    return bits.join(', ');
+}
+
 /** One run, as the block printed after the ✓/✗ line. */
 export function renderLanzerRunSummary(report: LanzerRunReport): string {
     const lines: string[] = [];
@@ -36,6 +50,9 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
     lines.push(
         `  ${report.attempts} attempt(s), ${formatDuration(report.durationMs)}, stopped: ${report.stopReason}`
     );
+    if (report.configuration) {
+        lines.push(`  ${describeConfiguration(report.configuration)}`);
+    }
 
     if (report.toolCalls.length > 0) {
         const failed = report.toolCalls.filter((call) => !call.ok).length;

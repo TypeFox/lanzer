@@ -139,28 +139,31 @@ describe('the session permission mode', () => {
     const CLAUDE_MODES = JSON.stringify(['default', 'acceptEdits', 'plan', 'auto']);
 
     async function sessionSetup(options: Partial<RunLanzerAgentTaskOptions>) {
-        const { log } = await runFakeAgent([[]], options);
+        const { log, run } = await runFakeAgent([[]], options);
         const session = log.find((entry) => entry.op === 'session');
         return {
             meta: session?.meta ? JSON.parse(session.meta) : undefined,
-            modes: log.filter((entry) => entry.op === 'mode').map((entry) => entry.mode)
+            modes: log.filter((entry) => entry.op === 'mode').map((entry) => entry.mode),
+            configuration: run.configuration
         };
     }
 
     test('a run that may write switches to acceptEdits, and never allows bypass', async () => {
-        const { meta, modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
+        const { meta, modes, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
         expect(modes).toEqual(['acceptEdits']);
+        expect(configuration?.permissionMode).toBe('acceptEdits');
         // The adapter ignores a mode sent in `_meta`, so none is; bypass is refused there instead.
         expect(meta.claudeCode.options).toMatchObject({ allowDangerouslySkipPermissions: false });
         expect(meta.claudeCode.options).not.toHaveProperty('permissionMode');
     });
 
     test('a read-only run stays in default, which asks', async () => {
-        const { modes } = await sessionSetup({
+        const { modes, configuration } = await sessionSetup({
             env: { FAKE_AGENT_MODES: JSON.stringify(['auto', 'default', 'acceptEdits']) },
             permissions: resolvePermissionPolicy('read')
         });
         expect(modes).toEqual(['default']);
+        expect(configuration?.permissionMode).toBe('default');
     });
 
     test('nothing is sent when the session already opens in that mode', async () => {
@@ -169,8 +172,28 @@ describe('the session permission mode', () => {
     });
 
     test('an agent that does not offer the mode is left alone', async () => {
-        const { modes } = await sessionSetup({ env: { FAKE_AGENT_MODES: JSON.stringify(['ask', 'code']) } });
+        const { modes, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: JSON.stringify(['ask', 'code']) } });
         expect(modes).toEqual([]);
+        // Recorded as it is: the mode the session opened in, not the one the policy wanted.
+        expect(configuration?.permissionMode).toBe('ask');
+    });
+
+    test('the run records the agent, its settings and a missing mode as they were', async () => {
+        const { configuration } = await sessionSetup({ model: 'fast', effort: 'low', fixIterations: 1, retryIterations: 2 });
+        expect(configuration).toEqual({
+            transport: 'acp',
+            command: process.execPath,
+            args: [fixture('fake-agent.mjs')],
+            agent: { name: 'fake-agent', version: '1.2.3' },
+            model: 'fast',
+            effort: 'low',
+            allowedToolKinds: ['edit', 'other', 'read', 'search', 'think'],
+            toolAllowlist: expect.arrayContaining(['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill']),
+            fixIterations: 1,
+            retryIterations: 2
+        });
+        // The fake agent offers no modes here, so there is no mode to record.
+        expect(configuration).not.toHaveProperty('permissionMode');
     });
 
     test('an explicit session mode wins over the policy', async () => {
@@ -470,5 +493,44 @@ describe('a single-job run', () => {
         expect(run.validation?.issues).toEqual([
             `A run starts from ${driverPath}, which the campaign provides; it must not be changed, but it was changed during this run.`
         ]);
+    });
+});
+
+describe('a run whose agent never starts', () => {
+    /** A service with no policy and no skill, so nothing runs before the launch. */
+    class BareService extends DefaultLanzerService {
+        constructor() {
+            const { shared, Lanzer } = createLanzerServices(EmptyFileSystem);
+            super(shared, Lanzer);
+        }
+        override async getGenerationPolicy(): Promise<LanzerGenerationPolicy | undefined> {
+            return undefined;
+        }
+        override async dslSkill(): Promise<LanzerDslSkillReference | undefined> {
+            return undefined;
+        }
+    }
+
+    test('still reports how it was configured, from its options alone', async () => {
+        const service = new BareService();
+        const run = await runLanzerCampaign(resolved, {
+            service,
+            runner: { validateCampaign: async () => ({ ok: true, documents: [] }) }
+        }, {
+            command: join(dir, 'no-such-agent'),
+            model: 'fast',
+            maxAttempts: 1
+        });
+        expect(run.report?.failedStage).toBe('launch');
+        expect(run.report?.configuration).toMatchObject({
+            transport: 'acp',
+            command: join(dir, 'no-such-agent'),
+            model: 'fast',
+            fixIterations: 0,
+            retryIterations: 1
+        });
+        // Nothing the agent would have said: it never answered.
+        expect(run.report?.configuration).not.toHaveProperty('agent');
+        expect(run.report?.configuration).not.toHaveProperty('permissionMode');
     });
 });
