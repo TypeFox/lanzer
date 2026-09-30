@@ -8,12 +8,15 @@ import {
     findLanzerGenerationJob,
     loadLanzerDocumentFromFile,
     buildLanzerSuiteReport,
+    describeSelectableTypes,
+    loadGrammarsFor,
     meetsMinPass,
     parseMinPass,
     permissiveLanzerPolicy,
     previewLanzerCampaignTask,
     renderLanzerRunSummary,
     renderLanzerSuiteSummary,
+    renderSelectableTypes,
     resolveAcpOptionsFromEnv,
     resolveLanzerCampaignFile,
     resolvePermissionPolicy
@@ -135,6 +138,22 @@ export function createLoxLanzerCli(): Command {
         .option('--job <selector>', 'select one job by id or file alias')
         .description('resolve a valid .lanzer campaign into concrete generation jobs')
         .action(planAction);
+
+    program
+        .command('types')
+        .argument('<file>', 'a .lanzer campaign (its imported grammars) or a .langium grammar')
+        .option('--json', 'print the types as JSON')
+        .description('list the type names a selector can use, with their properties, subtypes and direct children')
+        .action(async (file: string, options: { json?: boolean }) => {
+            const grammars = await loadGrammarsFor(file);
+            if (grammars.length === 0) {
+                console.error(`No grammar found for ${file}: pass a .langium grammar, or a .lanzer campaign that imports one.`);
+                process.exitCode = 1;
+                return;
+            }
+            const types = describeSelectableTypes(grammars);
+            console.log(options.json ? JSON.stringify(types, null, 2) : renderSelectableTypes(types));
+        });
 
     program
         .command('generate')

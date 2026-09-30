@@ -14,6 +14,7 @@ import * as ast from '../generated/ast.js';
 import { astTypeOfRule, UNRESOLVED_AST_TYPE } from '../grammar/ast-type.js';
 import { CompositeAstReflection } from '../grammar/composite-reflection.js';
 import { buildContainmentGraph, type ContainmentGraph } from '../grammar/reachability.js';
+import { nearestName } from '../util/suggest.js';
 
 interface SelectorValidationContext {
     reflection: AstReflection;
@@ -146,7 +147,8 @@ export class LanzerSelectorValidator {
         const propMeta = metaData.properties[predicate.property]
             ?? findPropertyInSubtypes(predicate.property, ownerType, context.reflection);
         if (!propMeta) {
-            accept('error', `Type '${ownerType}' has no property '${predicate.property}'.`, {
+            const suggestion = nearestName(predicate.property, propertyNames(ownerType, context.reflection));
+            accept('error', `Type '${ownerType}' has no property '${predicate.property}'.${suggestion ? ` Did you mean '${suggestion}'?` : ''}`, {
                 node: predicate,
                 property: 'property'
             });
@@ -192,9 +194,14 @@ export class LanzerSelectorValidator {
 
         const kind = combinator === '>' ? 'direct' : 'descendant';
         if (!canReach(parent, child, context.containment, context.reflection, kind)) {
+            // A `>` that should have been `>>` is the usual slip: say so, and name what lies between.
+            const between = kind === 'direct' ? typesBetween(parent, child, context.containment, context.reflection) : undefined;
+            const hint = between
+                ? ` It is a descendant, though, via ${between.map((type) => `'${type}'`).join(' > ')}: use '>>'.`
+                : '';
             accept(
                 'error',
-                `'${child}' is not reachable as a ${kind === 'direct' ? 'direct child' : 'descendant'} of '${parent}' in the imported grammar.`,
+                `'${child}' is not reachable as a ${kind === 'direct' ? 'direct child' : 'descendant'} of '${parent}' in the imported grammar.${hint}`,
                 { node: partNode, property: 'rule' }
             );
         }
@@ -295,6 +302,53 @@ function canReach(
         }
     }
     return false;
+}
+
+/**
+ * The types a shortest chain of direct children passes through from `parent` to `child`, or
+ * `undefined` when there is no such chain. Steps follow the same subtype rules as {@link canReach}.
+ */
+function typesBetween(
+    parent: string,
+    child: string,
+    graph: ContainmentGraph,
+    reflection: AstReflection
+): string[] | undefined {
+    const reaches = (slot: string): boolean => reflection.isSubtype(slot, child) || reflection.isSubtype(child, slot);
+    const previous = new Map<string, string | undefined>([[parent, undefined]]);
+    const queue = [parent];
+    for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        for (const type of expandSubtypes(current, reflection)) {
+            for (const next of graph.directChildren.get(type) ?? []) {
+                if (current !== parent && reaches(next)) {
+                    const chain = [current];
+                    for (let step = previous.get(current); step !== undefined && step !== parent; step = previous.get(step)) {
+                        chain.unshift(step);
+                    }
+                    return chain;
+                }
+                if (!previous.has(next)) {
+                    previous.set(next, current);
+                    queue.push(next);
+                }
+            }
+        }
+    }
+    return undefined;
+}
+
+/** Every property a selector can name on `type`: its own and those of its subtypes. */
+function propertyNames(type: string, reflection: AstReflection): string[] {
+    const names: string[] = [];
+    for (const each of expandSubtypes(type, reflection)) {
+        try {
+            names.push(...Object.keys(reflection.getTypeMetaData(each).properties));
+        } catch {
+            // A type without metadata of its own contributes no properties.
+        }
+    }
+    return names;
 }
 
 function expandSubtypes(type: string, reflection: AstReflection): Set<string> {
