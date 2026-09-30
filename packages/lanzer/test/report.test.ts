@@ -162,3 +162,19 @@ describe('the run configuration', () => {
         expect(renderLanzerRunSummary(report)).not.toContain('agent:');
     });
 });
+
+describe('the agent\'s own validate checks in the run summary', () => {
+    const check = (ok: boolean, issueCount: number) => ({ tool: 'validate', startedAtMs: 0, durationMs: 1, ok, codes: [], issueCount });
+
+    test('are listed in order when any failed, even on a passing run', async () => {
+        const toolCalls = [check(false, 3), check(false, 1), check(true, 0)];
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { toolCalls }), validation: verdict() });
+        expect(report.ok).toBe(true);
+        expect(renderLanzerRunSummary(report)).toContain('  validate: ✗3 ✗1 ok');
+    });
+
+    test('are not listed when every check passed', async () => {
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { toolCalls: [check(true, 0)] }), validation: verdict() });
+        expect(renderLanzerRunSummary(report)).not.toContain('validate:');
+    });
+});

@@ -33,8 +33,33 @@ export interface LanzerToolCallRecord {
     codes: string[];
     /** Number of issues reported, whether or not they carried codes. */
     issueCount: number;
+    /**
+     * What a failed `validate` call reported, as the agent was shown it. Absent on a passing call.
+     *
+     * The run's final verdict says only where the agent ended up. An agent that fixes its own
+     * mistakes mid-turn leaves nothing there, and these are then the only record of what it got
+     * wrong on the way.
+     */
+    issues?: LanzerToolCallIssue[];
+    /** How many issues were left out of {@link issues} to keep the report bounded. */
+    issuesOmitted?: number;
     /** Set when the tool itself threw rather than reporting a failure. */
     error?: string;
+}
+
+/** One problem a `validate` call reported. */
+export interface LanzerToolCallIssue {
+    /**
+     * Which check found it: a document's own diagnostics, a negative file's expectations, a campaign
+     * requirement, a `run` block, or the workspace's file set.
+     */
+    source: 'document' | 'diagnostics' | 'requirement' | 'behaviour' | 'workspace';
+    message: string;
+    /** Set for a document diagnostic. */
+    uri?: string;
+    line?: number;
+    character?: number;
+    code?: string;
 }
 
 export interface LanzerToolHost {
@@ -71,14 +96,24 @@ function renderValidation(result: LanzerCampaignValidationResult): string {
     return lines.join('\n');
 }
 
-function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]; issueCount: number } {
+/** A bad file can produce hundreds of diagnostics; the first ones say what went wrong. */
+const MAX_RECORDED_ISSUES = 50;
+
+function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]; issueCount: number; issues: LanzerToolCallIssue[] } {
     const codes: string[] = [];
-    let issueCount = 0;
+    const issues: LanzerToolCallIssue[] = [];
     for (const document of result.documents) {
         if (document.expectsDiagnostics) continue;
         for (const issue of document.issues) {
-            issueCount += 1;
             if (issue.code) codes.push(issue.code);
+            issues.push({
+                source: 'document',
+                message: issue.message,
+                uri: document.uri,
+                ...(issue.line !== undefined ? { line: issue.line } : {}),
+                ...(issue.character !== undefined ? { character: issue.character } : {}),
+                ...(issue.code ? { code: issue.code } : {})
+            });
         }
     }
     for (const file of result.diagnostics?.files ?? []) {
@@ -86,11 +121,17 @@ function collectCodes(result: LanzerCampaignValidationResult): { codes: string[]
             if (issue.code) codes.push(issue.code);
         }
     }
-    issueCount += (result.diagnostics?.issues.length ?? 0)
-        + (result.workspace?.issues.length ?? 0)
-        + (result.campaign?.issues.length ?? 0)
-        + (result.behaviour?.issues.length ?? 0);
-    return { codes, issueCount };
+    // The same strings the agent reads in `renderValidation`, tagged with the check that made them.
+    const findings: Array<[LanzerToolCallIssue['source'], string[] | undefined]> = [
+        ['diagnostics', result.diagnostics?.issues],
+        ['requirement', result.campaign?.issues],
+        ['behaviour', result.behaviour?.issues],
+        ['workspace', result.workspace?.issues]
+    ];
+    for (const [source, messages] of findings) {
+        for (const message of messages ?? []) issues.push({ source, message });
+    }
+    return { codes, issueCount: issues.length, issues };
 }
 
 /**
@@ -118,7 +159,7 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
     /** Time a call, record what it found, and hand the agent the rendered text. */
     const record = async (
         tool: string,
-        run: () => Promise<{ text: string; ok: boolean; codes?: string[]; issueCount?: number }>
+        run: () => Promise<{ text: string; ok: boolean; codes?: string[]; issueCount?: number; issues?: LanzerToolCallIssue[] }>
     ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> => {
         const startedAtMs = Date.now();
         try {
@@ -129,7 +170,14 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
                 durationMs: Date.now() - startedAtMs,
                 ok: outcome.ok,
                 codes: outcome.codes ?? [],
-                issueCount: outcome.issueCount ?? 0
+                issueCount: outcome.issueCount ?? 0,
+                // Only a failed call's: a passing one has nothing to say, and the report stays small.
+                ...(!outcome.ok && outcome.issues?.length
+                    ? {
+                        issues: outcome.issues.slice(0, MAX_RECORDED_ISSUES),
+                        ...(outcome.issues.length > MAX_RECORDED_ISSUES ? { issuesOmitted: outcome.issues.length - MAX_RECORDED_ISSUES } : {})
+                    }
+                    : {})
             });
             return { content: [{ type: 'text', text: outcome.text }] };
         } catch (error) {
@@ -173,8 +221,8 @@ export async function startLanzerToolHost(toolkit: LanzerToolkit): Promise<Lanze
                 async () =>
                     record('validate', async () => {
                         const result = await validate();
-                        const { codes, issueCount } = collectCodes(result);
-                        return { text: renderValidation(result), ok: result.ok, codes, issueCount };
+                        const { codes, issueCount, issues } = collectCodes(result);
+                        return { text: renderValidation(result), ok: result.ok, codes, issueCount, issues };
                     })
             );
         }

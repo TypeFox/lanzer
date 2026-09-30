@@ -265,6 +265,23 @@ instead:
     unexpected:2:19: [LOX_ARITY_MISMATCH] Expected 2 argument(s) but got 1.
 ```
 
+A run can pass and still have struggled. The agent calls Lanzer's `validate` tool as it works and
+fixes what it reports before the end of its turn, so the final verdict only says where it ended up.
+When any of those checks failed, the summary lists them in order, with how many problems each
+found:
+
+```text
+✓ integerMath — generated and validated
+  ok
+  1 attempt(s), 125.3s, stopped: end_turn
+  lanzer tools: 9 call(s), 8 reporting problems
+  validate: ✗1 ✗1 ✗1 ✗1 ✗1 ✗1 ✗1 ✗1 ok
+```
+
+The JSON report keeps what each failed check reported, as the agent was shown it: the file, line
+and code of each diagnostic, and the requirement, behaviour or workspace findings, in the tool
+call's `issues` (the first 50; `issuesOmitted` counts the rest).
+
 #### Repeating runs
 
 One passing run says little about an agent that gets the task right two times in three. `--runs N`
@@ -345,6 +362,10 @@ diagnostic codes that moved (occurrences per run):
   each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or
   `removed`.
+- **Failed checks.** An agent that calls `validate` as it works can end every run with a pass
+  whatever the skill, so the pass rate alone may not move. Under each campaign where either side had
+  any, `compare` lists the failed `validate` calls of each run (`failed checks per run: 11,0,2 →
+  1,1,14`): how hard the agent had to work to get there.
 - **No significance claims.** A campaign with fewer than 5 runs on either side is flagged — one run
   flipping moves its rate by 20 points or more — with a hint to rerun with `--runs`. `compare` does
   not run a statistical test; at these sample sizes it would mostly say "not enough runs".

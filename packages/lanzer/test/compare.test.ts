@@ -137,6 +137,35 @@ describe('compareLanzerSuiteReports', () => {
     });
 });
 
+describe('failed checks during the run', () => {
+    /** A `validate` call record: failed or passed. */
+    const check = (ok: boolean) => ({ tool: 'validate', startedAtMs: 0, durationMs: 1, ok, codes: [], issueCount: ok ? 0 : 1 });
+    /** A passing run whose agent checked itself: `failed` failed calls, then a passing one. */
+    const struggled = (campaign: string, failed: number) =>
+        run(campaign, undefined, { toolCalls: [...Array.from({ length: failed }, () => check(false)), check(true)] });
+
+    test('are counted per run, in run order, for each campaign', () => {
+        const comparison = compareLanzerSuiteReports(
+            suite(struggled('math', 8), struggled('math', 3), struggled('stack', 0)),
+            suite(struggled('math', 0), struggled('math', 1), struggled('stack', 0))
+        );
+        const math = comparison.campaigns.find((campaign) => campaign.campaign === 'math');
+        expect(math?.a?.failedChecks).toEqual([8, 3]);
+        expect(math?.b?.failedChecks).toEqual([0, 1]);
+        // Same pass rate: the checks are where the two setups differ.
+        expect(math?.change).toBe('unchanged');
+    });
+
+    test('are shown under a campaign when either side had any, and not otherwise', () => {
+        const text = renderLanzerSuiteComparison(compareLanzerSuiteReports(
+            suite(struggled('math', 8), struggled('stack', 0)),
+            suite(struggled('math', 0), struggled('stack', 0))
+        ));
+        expect(text).toMatch(/math\s+1\/1 → 1\/1  unchanged, ±0 pts\n\s+failed checks per run: 8 → 0/);
+        expect(text).not.toMatch(/stack.*\n\s+failed checks/);
+    });
+});
+
 describe('renderLanzerSuiteComparison', () => {
     test('prints the setup change, rates, per-campaign lines, stage shifts and the small-sample note', () => {
         const newSkill = { ...FINGERPRINT, skill: { ...FINGERPRINT.skill, hash: 'd'.repeat(64) } };

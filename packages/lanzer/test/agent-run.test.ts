@@ -289,6 +289,52 @@ describe('Lanzer tools across sessions', () => {
     });
 });
 
+describe('mid-run validate failures', () => {
+    test('a failed check keeps what it reported, and a passing one keeps nothing', async () => {
+        let calls = 0;
+        // The target is written first: until it exists, Lanzer's own file-set check fails every call.
+        const write = { write: job.absoluteOutputPath, content: 'fn main() { return; }' };
+        const { run } = await runFakeAgent([[write, { tool: 'validate' }, { tool: 'validate' }]], {
+            toolkit: {
+                validate: async () => (++calls === 1
+                    ? {
+                        ok: false,
+                        documents: [{
+                            uri: 'file:///ws/main.mini',
+                            issues: [{ kind: 'diagnostic', message: "Type 'number' is not assignable to type 'string'.", code: 'TYPE', line: 3, character: 5 }]
+                        }],
+                        behaviour: { ok: false, issues: ["Run of 'main' timed out"], runs: [] }
+                    }
+                    : { ok: true, documents: [] })
+            }
+        });
+        expect(run.toolCalls.map((call) => call.ok)).toEqual([false, true]);
+        expect(run.toolCalls[0].issues).toEqual([
+            { source: 'document', uri: 'file:///ws/main.mini', line: 3, character: 5, code: 'TYPE', message: "Type 'number' is not assignable to type 'string'." },
+            { source: 'behaviour', message: "Run of 'main' timed out" }
+        ]);
+        expect(run.toolCalls[0].issueCount).toBe(2);
+        expect(run.toolCalls[1].issues).toBeUndefined();
+    });
+
+    test('keeps the first 50 issues of a call and counts the rest', async () => {
+        const { run } = await runFakeAgent([[{ write: job.absoluteOutputPath, content: 'fn main() { return; }' }, { tool: 'validate' }]], {
+            toolkit: {
+                validate: async () => ({
+                    ok: false,
+                    documents: [],
+                    campaign: { ok: false, issues: Array.from({ length: 60 }, (_, i) => `requirement ${i + 1} unmet`) }
+                })
+            }
+        });
+        const [call] = run.toolCalls;
+        expect(call.issues).toHaveLength(50);
+        expect(call.issues?.[0]).toEqual({ source: 'requirement', message: 'requirement 1 unmet' });
+        expect(call.issuesOmitted).toBe(10);
+        expect(call.issueCount).toBe(60);
+    });
+});
+
 describe('the Codex MCP transport', () => {
     /** Run the fake Codex server, one script entry per call; return the prompts it received. */
     async function runFakeCodex(

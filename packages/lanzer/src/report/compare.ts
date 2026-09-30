@@ -14,10 +14,23 @@ export interface LanzerCampaignComparison {
     campaign: string;
     change: LanzerCampaignChange;
     /** Absent when the campaign is not in that report. */
-    a?: { total: number; succeeded: number; passRate: number; byStage: Partial<Record<LanzerRunStage, number>> };
-    b?: { total: number; succeeded: number; passRate: number; byStage: Partial<Record<LanzerRunStage, number>> };
+    a?: LanzerCampaignSide;
+    b?: LanzerCampaignSide;
     /** `b`'s pass rate minus `a`'s, when both have the campaign. */
     passRateDelta?: number;
+}
+
+/** One campaign in one report. */
+export interface LanzerCampaignSide {
+    total: number;
+    succeeded: number;
+    passRate: number;
+    byStage: Partial<Record<LanzerRunStage, number>>;
+    /**
+     * Failed `validate` calls in each run, in run order. An agent that checks itself fixes its
+     * mistakes before the verdict, so two setups with the same pass rate can differ only here.
+     */
+    failedChecks: number[];
 }
 
 /** One side's totals, per run where a sum would reward whichever side ran more. */
@@ -76,14 +89,26 @@ function describeSide(report: LanzerSuiteReport): LanzerSuiteSide {
     };
 }
 
+/** Failed `validate` calls per run of each campaign, in run order. */
+function failedChecksByCampaign(report: LanzerSuiteReport): Record<string, number[]> {
+    const byCampaign: Record<string, number[]> = {};
+    for (const run of report.runs) {
+        const failed = run.toolCalls.filter((call) => call.tool === 'validate' && !call.ok).length;
+        (byCampaign[run.campaign] ??= []).push(failed);
+    }
+    return byCampaign;
+}
+
 function compareCampaign(
     campaign: string,
     a: LanzerSuiteReport['summary']['byCampaign'][string] | undefined,
-    b: LanzerSuiteReport['summary']['byCampaign'][string] | undefined
+    b: LanzerSuiteReport['summary']['byCampaign'][string] | undefined,
+    failedChecks: { a: number[]; b: number[] }
 ): LanzerCampaignComparison {
-    const side = (counts: typeof a) => counts && { ...counts, passRate: counts.total === 0 ? 0 : counts.succeeded / counts.total };
-    const sideA = side(a);
-    const sideB = side(b);
+    const side = (counts: typeof a, checks: number[]): LanzerCampaignSide | undefined =>
+        counts && { ...counts, passRate: counts.total === 0 ? 0 : counts.succeeded / counts.total, failedChecks: checks };
+    const sideA = side(a, failedChecks.a);
+    const sideB = side(b, failedChecks.b);
     if (!sideA || !sideB) {
         return { campaign, change: sideA ? 'removed' : 'added', ...(sideA ? { a: sideA } : {}), ...(sideB ? { b: sideB } : {}) };
     }
@@ -183,7 +208,10 @@ export function compareLanzerSuiteReports(a: LanzerSuiteReport, b: LanzerSuiteRe
     const sideA = describeSide(a);
     const sideB = describeSide(b);
     const names = Array.from(new Set([...Object.keys(a.summary.byCampaign), ...Object.keys(b.summary.byCampaign)])).sort();
-    const campaigns = names.map((name) => compareCampaign(name, a.summary.byCampaign[name], b.summary.byCampaign[name]));
+    const checksA = failedChecksByCampaign(a);
+    const checksB = failedChecksByCampaign(b);
+    const campaigns = names.map((name) =>
+        compareCampaign(name, a.summary.byCampaign[name], b.summary.byCampaign[name], { a: checksA[name] ?? [], b: checksB[name] ?? [] }));
 
     // Over the campaigns both ran: a campaign added to the suite is not the setup getting better.
     const shared = campaigns.filter((campaign) => campaign.a && campaign.b);
@@ -290,6 +318,12 @@ export function renderLanzerSuiteComparison(comparison: LanzerSuiteComparison, l
         const side = (counts: LanzerCampaignComparison['a']) => (counts ? `${counts.succeeded}/${counts.total}${formatStages(counts.byStage)}` : '—');
         const delta = campaign.passRateDelta !== undefined ? `, ${signedPoints(campaign.passRateDelta)}` : '';
         lines.push(`  ${campaign.campaign.padEnd(width)}  ${side(campaign.a)} → ${side(campaign.b)}  ${campaign.change}${delta}`);
+        // Per run rather than summed: one run with 14 failed checks and two with none is a
+        // different story from three runs with five each.
+        const checks = (counts: LanzerCampaignComparison['a']) => (counts ? counts.failedChecks.join(',') || '—' : '—');
+        if ([...(campaign.a?.failedChecks ?? []), ...(campaign.b?.failedChecks ?? [])].some((count) => count > 0)) {
+            lines.push(`  ${''.padEnd(width)}  failed checks per run: ${checks(campaign.a)} → ${checks(campaign.b)}`);
+        }
     }
 
     const stages = comparison.stages.filter((stage) => stage.a > 0 || stage.b > 0);

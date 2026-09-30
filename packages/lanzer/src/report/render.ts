@@ -61,6 +61,12 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
     if (report.toolCalls.length > 0) {
         const failed = report.toolCalls.filter((call) => !call.ok).length;
         lines.push(`  lanzer tools: ${report.toolCalls.length} call(s)${failed > 0 ? `, ${failed} reporting problems` : ''}`);
+        // The agent's own checks, in order: a run that ends clean after `✗ ✗ ✗ ok` struggled in a
+        // way its final verdict does not show.
+        const checks = report.toolCalls.filter((call) => call.tool === 'validate');
+        if (checks.some((call) => !call.ok)) {
+            lines.push(`  validate: ${checks.map((call) => (call.ok ? 'ok' : `✗${call.issueCount > 0 ? call.issueCount : ''}`)).join(' ')}`);
+        }
     }
     if (report.deniedToolCalls.length > 0) {
         const kinds = Array.from(new Set(report.deniedToolCalls.map((call) => call.kind)));
