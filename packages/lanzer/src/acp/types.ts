@@ -1,0 +1,166 @@
+import type { LanzerTaskPayload } from '../campaign/prompt.js';
+import type { LanzerRunReport } from '../report/model.js';
+import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../services/types.js';
+import type { LanzerPermissionPolicy } from './permissions.js';
+import type { LanzerToolCallRecord, LanzerToolkit } from './tool-host.js';
+
+export interface LanzerAgentRunUpdate {
+    kind: string;
+    text?: string;
+    title?: string;
+    status?: string;
+    toolCallId?: string;
+}
+
+export interface LanzerAgentValidationResult {
+    ok: boolean;
+    issues: string[];
+}
+
+/**
+ * One prompt sent to the agent, and what the workspace looked like afterwards.
+ *
+ * Kept per attempt rather than only at the end, because the *shape* of the sequence is the
+ * diagnosis: 12 issues then 3 then 0 is an agent converging, 3 then 3 then 3 is one that has
+ * stopped learning anything from the prompt, and only the final count is the same in both.
+ */
+export interface LanzerAttemptRecord {
+    index: number;
+    kind: 'initial' | 'fix';
+    /** Which retry session this attempt belonged to; a retry starts a fresh conversation. */
+    session: number;
+    stopReason: string;
+    durationMs: number;
+    issueCount: number;
+    issues: string[];
+}
+
+/**
+ * What the run consumed, as reported by the agent.
+ *
+ * Two independent sources, because they answer different questions. `session/prompt` returns exact
+ * token counts per turn, which sum across a run; `session/update` notifications report how full the
+ * context is and what it has cost so far, which do not sum — the last one seen is the total.
+ */
+export interface LanzerAgentUsage {
+    /** Summed across every prompt in the run. */
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedReadTokens: number;
+    cachedWriteTokens: number;
+    /** Latest context occupancy reported by the agent, if it reports any. */
+    contextUsed?: number;
+    contextSize?: number;
+    /** Latest cumulative cost reported by the agent. */
+    costAmount?: number;
+    costCurrency?: string;
+}
+
+export interface RunLanzerAgentTaskOptions {
+    command: string;
+    args?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+    /** Directories the agent may read and write in, beyond the workspace. */
+    additionalDirectories?: string[];
+    /**
+     * Directories the agent may read but not write: the grammar reference, reference files, the
+     * DSL skill. Lanzer points the agent at these, so it has to be able to open them — and nothing
+     * it is sent to read is something it should change.
+     */
+    readOnlyDirectories?: string[];
+    provider?: string;
+    model?: string;
+    effort?: string;
+    sessionModeId?: string;
+    /**
+     * Number of FIX passes inside a single ACP session. After the initial prompt,
+     * if validation fails the agent receives a focused diagnostics-only edit prompt
+     * up to this many times within the same session (conversation context preserved).
+     */
+    fixIterations?: number;
+    /**
+     * Number of RETRY iterations — each retry spins up a fresh ACP session and
+     * re-sends the original prompt from scratch. Used when the fix budget is
+     * exhausted in a session, or as an outer escape hatch when the agent is stuck.
+     */
+    retryIterations?: number;
+    /**
+     * @deprecated Use `fixIterations` + `retryIterations`. When set without the new
+     * options, mapped to `fixIterations = max(maxAttempts - 1, 0)` and
+     * `retryIterations = 1` for backward compatibility.
+     */
+    maxAttempts?: number;
+    policy?: LanzerGenerationPolicy;
+    dslSkill?: LanzerDslSkillReference;
+    /**
+     * What the agent is allowed to do, by ACP tool kind. Defaults to
+     * {@link LANZER_BASELINE_TOOL_KINDS} — enough to generate files, and no shell.
+     */
+    permissions?: LanzerPermissionPolicy;
+    /**
+     * Tools offered to the agent for the duration of the run, served in-process.
+     *
+     * Backed by the same host services Lanzer validates with, so the agent can check its own work
+     * against the identical implementation instead of waiting for a fix pass to tell it.
+     */
+    toolkit?: LanzerToolkit;
+    /**
+     * Fail the run when the agent writes files the campaign did not declare.
+     *
+     * Off by default: a campaign states what must be true of the result, not everything that may
+     * exist, and a language often needs a manifest or index alongside its sources before anything
+     * resolves. Extra files are reported either way — this decides whether they sink the run.
+     */
+    strictFileSet?: boolean;
+    validate?: () => Promise<LanzerAgentValidationResult>;
+    /**
+     * If set, RecordingClient echoes a per-event progress line to `progressStream`
+     * (default `process.stderr`). Tool-call start + terminal status are always shown
+     * when this is set. Agent message/thought chunks are streamed only when
+     * `verbose` is true.
+     */
+    progress?: {
+        label?: string;
+        stream?: NodeJS.WritableStream;
+        verbose?: boolean;
+    };
+}
+
+export interface LanzerAgentRunResult {
+    task: LanzerTaskPayload;
+    sessionId: string;
+    attempts: number;
+    stopReason: string;
+    outputText: string;
+    agentThoughtText: string;
+    rawUpdates: LanzerAgentRunUpdate[];
+    validation?: LanzerAgentValidationResult;
+    /** Every Lanzer tool the agent invoked, in order. Empty when no toolkit was offered. */
+    toolCalls: LanzerToolCallRecord[];
+    /** Tool calls the permission policy refused, in order. */
+    deniedToolCalls: { kind: string; title: string }[];
+    /** Tokens, context and cost, as far as the agent reported them. */
+    usage: LanzerAgentUsage;
+    /** Wall-clock time for the whole run, including agent startup and validation. */
+    durationMs: number;
+    /** Every prompt sent and the validation that followed it, in order. */
+    attemptLog: LanzerAttemptRecord[];
+    /** Files produced beyond the campaign's declared set. Not a failure unless `strictFileSet`. */
+    extraFiles: string[];
+    /**
+     * Declared targets that already existed when the run started and were never rewritten.
+     *
+     * Their content predates the run, so a passing validation of them says nothing about what the
+     * agent did. The run fails on them, as it would on a target that was never written.
+     */
+    staleFiles: string[];
+    /**
+     * Structured outcome of the run, attached by {@link runLanzerCampaign}.
+     *
+     * Absent when the lower-level entry points are called directly, because the report needs the
+     * host's structured verdict and only the campaign-level orchestration has one.
+     */
+    report?: LanzerRunReport;
+}
