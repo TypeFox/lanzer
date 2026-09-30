@@ -209,7 +209,7 @@ export class LoxLanzerService extends DefaultLanzerService {
  * An ordinary file fails only on hard errors (lexer/parser errors and severity-1 diagnostics).
  * Warnings — such as the "comparison always returns false" warning Lox emits for incompatible `==`
  * operands — are not campaign failures, so the generator is not asked to "fix" intentional code.
- * They are still collected, coded, for a near-miss file that expects one.
+ * They are still collected, coded, for a negative file that expects one.
  */
 export class LoxLanzerCampaignRunner extends DefaultLanzerCampaignRunner {
     protected override collectDocumentResult(document: LangiumDocument): LanzerDocumentResult {

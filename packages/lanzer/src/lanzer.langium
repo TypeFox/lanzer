@@ -29,7 +29,7 @@ FileSpec:
         (requirements+=FileRequirement | diagnostics+=DiagnosticExpectation)*
     '}';
 
-// A file with diagnostic expectations is a deliberate near-miss: the language must reject it in
+// A file with diagnostic expectations is a negative file: the language must reject it in
 // exactly these ways. Each line is met by one diagnostic of that severity carrying the code and
 // the message (both, when both are given); any error no line accounts for fails the file. Codes
 // are the host's own and opaque here — Lanzer cannot list them while authoring.

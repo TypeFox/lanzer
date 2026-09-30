@@ -63,11 +63,11 @@ export function describeDiagnosticExpectation(expectation: LanzerDiagnosticExpec
 }
 
 /**
- * Compare what a near-miss file produced with what it had to.
+ * Compare what a negative file produced with what it had to.
  *
  * Every expectation needs at least one diagnostic meeting it — one mistake can be reported at
  * several sites, so more than one is fine. Every error has to be met by some expectation: an
- * error nobody asked for means the file is wrong in a second way, which is what a near-miss must
+ * error nobody asked for means the file is wrong in a second way, which is what a negative file must
  * not be. Warnings and infos nobody asked for are left alone; languages emit them freely.
  */
 export function compareDiagnostics(
@@ -83,12 +83,12 @@ export function compareDiagnostics(
 }
 
 /**
- * The documents of the campaign's near-miss files, by index into `documents`.
+ * The documents of the campaign's negative files, by index into `documents`.
  *
  * Paired by absolute path, as requirement checks pair their roots, so both agree on which document
  * is which file.
  */
-export function findNearMissDocuments(
+export function findNegativeFileDocuments(
     campaign: LanzerCampaignSpec,
     documents: LangiumDocument[]
 ): Map<number, LanzerCampaignSpec['files'][number]> {
@@ -105,11 +105,11 @@ export function findNearMissDocuments(
 }
 
 /**
- * Check every near-miss file against its expectations.
+ * Check every negative file against its expectations.
  *
  * `results` are the documents' findings with nothing filtered away, in the order of `documents`: a
  * warning a clean file would be forgiven is exactly what an `expect warning` looks for. Returns
- * `undefined` for a campaign with no near-miss files. A near-miss file that was never loaded is not
+ * `undefined` for a campaign with no negative files. A negative file that was never loaded is not
  * reported here — the file-set check already says it is missing.
  */
 export function validateDiagnostics(
@@ -122,7 +122,7 @@ export function validateDiagnostics(
     }
     const files: LanzerDiagnosticsOutcome[] = [];
     const issues: string[] = [];
-    for (const [index, file] of findNearMissDocuments(campaign, documents)) {
+    for (const [index, file] of findNegativeFileDocuments(campaign, documents)) {
         const { uri, issues: produced } = results[index];
         const { missing, unexpected } = compareDiagnostics(file.diagnostics, produced);
         files.push({

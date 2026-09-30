@@ -75,11 +75,11 @@ export function renderLanzerRunSummary(report: LanzerRunReport): string {
             lines.push(`    … ${shown.length - MAX_LISTED_DIAGNOSTICS} more (see the report file)`);
         }
     }
-    // Shown whether or not they matched: a passing near-miss is worth seeing too, since what it was
+    // Shown whether or not they matched: a passing negative file is worth seeing too, since what it was
     // rejected with is the point of generating it.
-    for (const file of report.nearMisses) {
+    for (const file of report.negativeFiles) {
         const matched = file.missing.length === 0 && file.unexpected.length === 0;
-        lines.push(`  near-miss ${shortenUri(file.uri)}: ${matched ? 'rejected as expected' : 'not rejected as expected'}`);
+        lines.push(`  negative ${shortenUri(file.uri)}: ${matched ? 'rejected as expected' : 'not rejected as expected'}`);
         for (const expected of file.expected) lines.push(`    expected: ${expected}`);
         for (const missing of file.missing) lines.push(`    missing: ${missing}`);
         for (const issue of file.unexpected) {

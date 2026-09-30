@@ -91,7 +91,7 @@ function determineFailedStage(
     if (files.some((file) => !file.exists) || run.staleFiles.length > 0) {
         return 'no_output';
     }
-    // A near-miss file's diagnostics are judged at `diagnostics`, not here: a parse error it was
+    // A negative file's diagnostics are judged at `diagnostics`, not here: a parse error it was
     // asked for is not a syntax failure.
     const issues = (validation?.documents ?? [])
         .filter((document) => !document.expectsDiagnostics)
@@ -149,7 +149,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
             issues: document.issues,
             ...(document.expectsDiagnostics ? { expectsDiagnostics: true } : {})
         })),
-        nearMisses: validation?.diagnostics?.files ?? [],
+        negativeFiles: validation?.diagnostics?.files ?? [],
         campaignIssues: validation?.campaign?.issues ?? [],
         behaviourIssues: validation?.behaviour?.issues ?? [],
         workspaceIssues: [...(validation?.workspace?.issues ?? []), ...fileSetIssues],

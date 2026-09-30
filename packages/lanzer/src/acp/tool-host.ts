@@ -55,7 +55,7 @@ export interface LanzerToolHost {
 function renderValidation(result: LanzerCampaignValidationResult): string {
     const lines: string[] = [result.ok ? 'VALID: every requirement is satisfied.' : 'INVALID:'];
     for (const document of result.documents) {
-        // A near-miss file's diagnostics are what it is for; its mismatches are listed below.
+        // A negative file's diagnostics are what it is for; its mismatches are listed below.
         if (document.issues.length === 0 || document.expectsDiagnostics) continue;
         lines.push(`${document.uri}:`);
         for (const issue of document.issues) {

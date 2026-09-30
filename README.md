@@ -240,7 +240,7 @@ Examples, each tested to pass with a correct program and to fail with a wrong on
 [`geometry.lanzer`](packages/lanzer-lox/examples/geometry.lanzer), whose run starts from a provided
 [test driver](packages/lanzer-lox/examples/geometry/driver.lox) that calls the generated library.
 
-#### Checking diagnostics: near-miss files
+#### Checking diagnostics: negative files
 
 To test a language's validator rather than its happy path, a `file` block can say which diagnostics
 the language must reject it with. The agent then writes a program that is almost right and wrong in
@@ -262,10 +262,10 @@ file mainFile at "src/main.lox" generates LoxProgram {
 - `message` compares like `expect output`: exact with no mode, `contains`, or `matches` (a regex).
   Use a regex when the message names something the agent chooses.
 - Each line must be met by at least one diagnostic. An **error** no line accounts for fails the
-  file, since a near-miss is wrong in one way, not two; warnings and infos nobody asked for are
+  file, since a negative file is wrong in one way, not two; warnings and infos nobody asked for are
   ignored. Parse errors are errors like any other.
-- Requirements still apply to a near-miss file, and every other generated file must stay valid. A
-  campaign with a near-miss file cannot have `run` blocks: its workspace is invalid on purpose.
+- Requirements still apply to a negative file, and every other generated file must stay valid. A
+  campaign with a negative file cannot have `run` blocks: its workspace is invalid on purpose.
 - Codes are the host's own, so `validate` checks only the shape of the line. A host that lists its
   codes (Lox does) rejects an unknown one before any agent starts.
 
@@ -273,7 +273,7 @@ The prompt asks the agent for exactly the listed mistake; fix prompts and the `v
 only what is missing or unexpected, never the intended diagnostics themselves. A mismatch fails the
 run at the `diagnostics` stage. Example, tested to pass on the intended mistake and to fail on an
 extra error, a missing one, or a different one:
-[`near-miss.lanzer`](packages/lanzer-lox/examples/near-miss.lanzer).
+[`negative.lanzer`](packages/lanzer-lox/examples/negative.lanzer).
 
 #### Reports
 
@@ -304,19 +304,19 @@ requirements, and saying `requirements` for it would send you to fix the wrong t
     - Forbidden selector matched 1 node(s) in mainFile: FunctionDeclaration
 ```
 
-A [near-miss file](#checking-diagnostics-near-miss-files) rejected exactly as its expectations say
+A [negative file](#checking-diagnostics-negative-files) rejected exactly as its expectations say
 is a success: the run is `ok`, and its intended diagnostics are left out of the per-code counts, so
 they never read as failures. The summary still lists what it was rejected with. A file rejected any
 other way fails at `diagnostics`, listing what was expected, what never came, and which errors came
 instead:
 
 ```text
-✗ typeMismatchLox — a near-miss file is not rejected the way the campaign expects
-  failed at diagnostics — a near-miss file is not rejected the way the campaign expects
+✗ typeMismatchLox — a negative file is not rejected the way the campaign expects
+  failed at diagnostics — a negative file is not rejected the way the campaign expects
   3 attempt(s), 18.4s, stopped: end_turn
   1 diagnostic(s):
       1  LOX_ARITY_MISMATCH
-  near-miss src/main.lox: not rejected as expected
+  negative src/main.lox: not rejected as expected
     expected: an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching /^Type '\w+' is not assignable to type '\w+'/
     missing: an error with code "LOX_TYPE_NOT_ASSIGNABLE" and a message matching /^Type '\w+' is not assignable to type '\w+'/
     unexpected:2:19: [LOX_ARITY_MISMATCH] Expected 2 argument(s) but got 1.
@@ -324,8 +324,8 @@ instead:
 
 The JSON adds per-run token/cost accounting, every tool call with timings, and diagnostics counted
 by code — so a suite run answers "how many succeeded, and where did the rest fail" directly. Its
-`nearMisses` field holds the same expected, missing and unexpected lists for each near-miss file,
-and a near-miss file's entry in `documents` is marked `expectsDiagnostics`, since the diagnostics
+`negativeFiles` field holds the same expected, missing and unexpected lists for each negative file,
+and a negative file's entry in `documents` is marked `expectsDiagnostics`, since the diagnostics
 listed there are the ones it was meant to produce.
 
 ### 2. Library fast path
@@ -392,7 +392,7 @@ from `diagnosticCodes()` so a campaign expecting an unknown one is rejected befo
 Optionally extend `DefaultLanzerCampaignRunner`: override `collectDocumentResult` to attach codes to
 diagnostics that lack them (Lox does), and `failsCleanFile(issue)` to decide which issues fail an
 ordinary file (Lox fails only on errors). Decide that in `failsCleanFile`, not by dropping issues in
-`collectDocumentResult`: a dropped warning can never be matched by a near-miss file's
+`collectDocumentResult`: a dropped warning can never be matched by a negative file's
 `expect warning`. These overrides never modify your language itself.
 
 **2. The wiring** ([`lox-host.ts`](packages/lanzer-lox/src/lox-host.ts)) — call the generic

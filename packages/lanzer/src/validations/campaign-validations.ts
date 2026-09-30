@@ -17,7 +17,7 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
                 this.checkUniqueArtifactNames,
                 this.checkUniqueArtifactPaths,
                 this.checkNonEmptyWorkspaceRoot,
-                this.checkNoRunsBesideNearMisses
+                this.checkNoRunsBesideNegativeFiles
             ],
             DiagnosticExpectation: this.checkDiagnosticExpectation,
             CountRequirement: [this.checkPositiveCount, this.checkFileScopeInsideFile],
@@ -168,15 +168,15 @@ export class LanzerCampaignValidator extends LanzerBaseValidation {
 
     /**
      * A workspace with a file broken on purpose cannot be run: the program never gets past the
-     * language's own checks, so a `run` block beside a near-miss could only ever fail.
+     * language's own checks, so a `run` block beside a negative file could only ever fail.
      */
-    checkNoRunsBesideNearMisses = (node: ast.Campaign, accept: ValidationAcceptor): void => {
-        const nearMiss = node.files.find((file) => file.diagnostics.length > 0);
-        if (!nearMiss) {
+    checkNoRunsBesideNegativeFiles = (node: ast.Campaign, accept: ValidationAcceptor): void => {
+        const negativeFile = node.files.find((file) => file.diagnostics.length > 0);
+        if (!negativeFile) {
             return;
         }
         for (const run of node.runs) {
-            accept('error', `Campaign '${node.name}' cannot run a program: file '${nearMiss.name}' expects diagnostics, so the workspace is invalid on purpose.`, {
+            accept('error', `Campaign '${node.name}' cannot run a program: file '${negativeFile.name}' expects diagnostics, so the workspace is invalid on purpose.`, {
                 node: run
             });
         }

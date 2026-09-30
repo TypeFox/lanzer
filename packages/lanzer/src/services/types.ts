@@ -47,14 +47,14 @@ export interface LanzerDocumentResult {
     uri: string;
     issues: LanzerDocumentIssue[];
     /**
-     * Set for a near-miss file — one declaring the diagnostics it must be rejected with. Its issues
+     * Set for a negative file — one declaring the diagnostics it must be rejected with. Its issues
      * are then everything it produced, judged by {@link LanzerCampaignValidationResult.diagnostics}
      * rather than required to be empty.
      */
     expectsDiagnostics?: boolean;
 }
 
-/** How one near-miss file compared with the diagnostics it had to produce. */
+/** How one negative file compared with the diagnostics it had to produce. */
 export interface LanzerDiagnosticsOutcome {
     fileAlias: string;
     uri: string;
@@ -88,7 +88,7 @@ export interface LanzerCampaignValidationResult {
     documents: LanzerDocumentResult[];
     workspace?: LanzerWorkspaceValidationResult;
     campaign?: LanzerCampaignCheckValidationResult;
-    /** How the near-miss files compared with their expected diagnostics. Absent when there are none. */
+    /** How the negative files compared with their expected diagnostics. Absent when there are none. */
     diagnostics?: LanzerDiagnosticsValidationResult;
     /**
      * What running the campaign's entry files produced, checked against its `run` blocks.

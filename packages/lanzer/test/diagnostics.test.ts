@@ -59,7 +59,7 @@ describe('writing diagnostic expectations', () => {
         ]);
     });
 
-    test('a near-miss campaign cannot also run its program', async () => {
+    test('a negative-file campaign cannot also run its program', async () => {
         const source = [
             'import "mini.langium"',
             'campaign demo {',
@@ -150,7 +150,7 @@ describe('codes the host does not report', () => {
     });
 });
 
-describe('reporting a near-miss', () => {
+describe('reporting a negative file', () => {
     async function reportFor(validation: LanzerCampaignValidationResult) {
         const [campaign] = await loadCampaignSpecs(miniCampaign('expect error code "DUP"'));
         const jobs = buildLanzerGenerationJobs(resolveLanzerCampaign(campaign));
@@ -191,7 +191,7 @@ describe('reporting a near-miss', () => {
         expect(report.issues.total).toBe(0);
         // The intended diagnostic is still in the report, marked so it does not read as a failure.
         expect(report.documents).toEqual([{ uri: 'file:///out/main.mini', issues: [expected], expectsDiagnostics: true }]);
-        expect(renderLanzerRunSummary(report)).toContain('near-miss out/main.mini: rejected as expected');
+        expect(renderLanzerRunSummary(report)).toContain('negative out/main.mini: rejected as expected');
     });
 
     test('a mismatch fails at the diagnostics stage, listing expected, missing and unexpected', async () => {
@@ -214,18 +214,18 @@ describe('reporting a near-miss', () => {
         expect(report.failedStage).toBe('diagnostics');
         expect(report.issues.byCode).toEqual({ TYPE: 1 });
         const text = renderLanzerRunSummary(report);
-        expect(text).toContain('near-miss out/main.mini: not rejected as expected');
+        expect(text).toContain('negative out/main.mini: not rejected as expected');
         expect(text).toContain('expected: an error with code "DUP"');
         expect(text).toContain('missing: an error with code "DUP"');
         expect(text).toContain('unexpected:3:5: [TYPE] Unknown type');
     });
 });
 
-describe('the prompt for a near-miss', () => {
+describe('the prompt for a negative file', () => {
     test('asks for exactly the listed mistake', async () => {
         const [campaign] = await loadCampaignSpecs(miniCampaign('require Fn\nexpect error code "DUP" message contains "twice"'));
         const { prompt } = buildLanzerCampaignTask(buildLanzerGenerationJobs(resolveLanzerCampaign(campaign)));
-        expect(prompt).toContain('this file is a deliberate near-miss');
+        expect(prompt).toContain('this is a negative file');
         expect(prompt).toContain('- an error with code "DUP" and a message containing "twice"');
         expect(prompt).toContain('Introduce exactly the mistake that causes these and nothing else');
     });
@@ -233,6 +233,6 @@ describe('the prompt for a near-miss', () => {
     test('says nothing about diagnostics for an ordinary campaign', async () => {
         const [campaign] = await loadCampaignSpecs(miniCampaign('require Fn'));
         const { prompt } = buildLanzerCampaignTask(buildLanzerGenerationJobs(resolveLanzerCampaign(campaign)));
-        expect(prompt).not.toContain('near-miss');
+        expect(prompt).not.toContain('negative file');
     });
 });

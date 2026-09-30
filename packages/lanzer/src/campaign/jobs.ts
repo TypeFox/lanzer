@@ -36,7 +36,7 @@ export interface LanzerGenerationJob {
     grammarBaseDir?: string;
     /** The campaign's `run` blocks, with each entry file's absolute path, for the prompt. */
     runs: LanzerGenerationRun[];
-    /** The diagnostics this file must be rejected with; empty unless it is a near-miss. */
+    /** The diagnostics this file must be rejected with; empty unless it is a negative file. */
     diagnostics: LanzerDiagnosticExpectation[];
 }
 
