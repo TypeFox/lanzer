@@ -128,8 +128,39 @@ export interface RunLanzerAgentTaskOptions {
     };
 }
 
+/**
+ * How a run was configured, and what the agent said it was.
+ *
+ * Recorded so a report can be read on its own and compared with another: the same campaign passing
+ * under one model and failing under another is only visible when the report says which was which.
+ */
+export interface LanzerRunConfiguration {
+    /** How Lanzer talked to the agent: ACP, or Codex's MCP server. */
+    transport: 'acp' | 'codex-mcp';
+    command: string;
+    args: string[];
+    /** The agent's name and version, as it reported them on connecting. Absent if it did not. */
+    agent?: { name: string; version: string };
+    model?: string;
+    effort?: string;
+    /**
+     * The permission mode the session ran in: the one Lanzer set (the agent accepted the request),
+     * or the one it opened in when that was already right. For Codex, the sandbox it was started
+     * in. Absent when the agent offers no modes.
+     */
+    permissionMode?: string;
+    /** The ACP tool kinds the policy allowed. */
+    allowedToolKinds: string[];
+    /** The built-in tools Claude was limited to, when the policy named some. */
+    toolAllowlist?: string[];
+    fixIterations: number;
+    retryIterations: number;
+}
+
 export interface LanzerAgentRunResult {
     task: LanzerTaskPayload;
+    /** How the run was configured. Absent only on a result built by hand. */
+    configuration?: LanzerRunConfiguration;
     sessionId: string;
     attempts: number;
     stopReason: string;

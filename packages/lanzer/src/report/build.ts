@@ -142,6 +142,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         stopReason: run.stopReason,
         durationMs: run.durationMs,
         sessionId: run.sessionId,
+        ...(run.configuration ? { configuration: run.configuration } : {}),
         files,
         issues: tallyIssues(validation),
         documents: (validation?.documents ?? []).map((document) => ({

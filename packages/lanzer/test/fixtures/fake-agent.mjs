@@ -57,7 +57,7 @@ async function runStep(step, session, cx, prompt) {
 }
 
 acp.agent({ name: 'fake-agent' })
-    .onRequest('initialize', () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: {} }))
+    .onRequest('initialize', () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: {}, agentInfo: { name: 'fake-agent', version: '1.2.3' } }))
     .onRequest('session/new', ({ params }) => {
         const id = `session-${sessions.size + 1}`;
         sessions.set(id, { id, index: sessions.size + 1, mcpServers: params.mcpServers ?? [] });

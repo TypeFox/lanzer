@@ -5,6 +5,7 @@ import * as acp from '@agentclientprotocol/sdk';
 import chalk from 'chalk';
 import type { LanzerTaskPayload } from '../campaign/prompt.js';
 import { mergeUsage, runAttemptLoop } from './attempts.js';
+import { describeRunConfiguration } from './configuration.js';
 import { buildClientApp, RecordingClient, type FileAccessRoots } from './client.js';
 import { withFileSetCheck, type LanzerFileSetResult } from './file-set.js';
 import {
@@ -18,7 +19,7 @@ import { emitRunProgress, type RecordingClientProgress } from './progress.js';
 import { sanitizeSpawnEnv } from './spawn-env.js';
 import { asStageError, atStage, LanzerRunStageError, type StageTracker } from './stages.js';
 import { startLanzerToolHost, type LanzerToolHost } from './tool-host.js';
-import type { LanzerAgentRunResult, LanzerAgentValidationResult, RunLanzerAgentTaskOptions } from './types.js';
+import type { LanzerAgentRunResult, LanzerAgentValidationResult, LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.js';
 
 /** Run a task over an ACP agent: spawn it, open sessions, and prompt until the files pass. */
 export async function executeLanzerTaskOverAcp(
@@ -64,7 +65,8 @@ export async function executeLanzerTaskOverAcp(
         // Raced against the launch failure: a command that does not exist never answers
         // `initialize`, so without this the run would wait on a handshake that cannot arrive.
         return await Promise.race([launch, buildClientApp(client).connectWith(stream, async (agent) => {
-            await atStage(stage, 'session', () => agent.request(acp.AGENT_METHODS.initialize, {
+            const configuration: LanzerRunConfiguration = describeRunConfiguration(options, 'acp');
+            const initialized = await atStage(stage, 'session', () => agent.request(acp.AGENT_METHODS.initialize, {
                 protocolVersion: acp.PROTOCOL_VERSION,
                 clientInfo: {
                     name: 'lanzer',
@@ -77,6 +79,10 @@ export async function executeLanzerTaskOverAcp(
                     }
                 }
             }));
+
+            if (initialized.agentInfo) {
+                configuration.agent = { name: initialized.agentInfo.name, version: initialized.agentInfo.version };
+            }
 
             const openedSessions: string[] = [];
             const tokens = { totalTokens: 0, inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 };
@@ -93,8 +99,9 @@ export async function executeLanzerTaskOverAcp(
             try {
                 const outcome = await runAttemptLoop(task, options, {
                     openSession: async () => {
-                        const session = await atStage(stage, 'session', () => openConfiguredSession(agent, context, options, permissions, toolHost));
+                        const { session, permissionMode } = await atStage(stage, 'session', () => openConfiguredSession(agent, context, options, permissions, toolHost));
                         openedSessions.push(session.sessionId);
+                        if (permissionMode) configuration.permissionMode = permissionMode;
                         return session.sessionId;
                     },
                     prompt: async (sessionId, text) => {
@@ -110,6 +117,7 @@ export async function executeLanzerTaskOverAcp(
                 const result = client.getResult();
                 return {
                     task,
+                    configuration,
                     sessionId: outcome.lastSessionId,
                     attempts: outcome.attempts,
                     stopReason: outcome.stopReason,
@@ -180,7 +188,7 @@ async function openConfiguredSession(
     options: RunLanzerAgentTaskOptions,
     permissions: LanzerPermissionPolicy,
     toolHost: LanzerToolHost | undefined
-): Promise<acp.NewSessionResponse> {
+): Promise<{ session: acp.NewSessionResponse; permissionMode?: string }> {
     const tools = allowedClaudeTools(permissions);
     const session = await agent.request(acp.AGENT_METHODS.session_new, {
         cwd: context.sessionCwd,
@@ -259,7 +267,9 @@ async function openConfiguredSession(
         );
     }
 
-    return session;
+    // The mode the session is in now: the one just set, or the one it opened in. None when the
+    // agent has no modes at all.
+    return { session, permissionMode: session.modes ? (modeId ?? session.modes.currentModeId) : undefined };
 }
 
 /**

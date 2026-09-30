@@ -11,7 +11,7 @@ interface AttemptBudget {
     retryIterations: number;
 }
 
-function resolveAttemptBudget(options: RunLanzerAgentTaskOptions): AttemptBudget {
+export function resolveAttemptBudget(options: RunLanzerAgentTaskOptions): AttemptBudget {
     if (options.fixIterations !== undefined || options.retryIterations !== undefined) {
         return {
             fixIterations: Math.max(options.fixIterations ?? 2, 0),

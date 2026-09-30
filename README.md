@@ -322,6 +322,12 @@ instead:
     unexpected:2:19: [LOX_ARITY_MISMATCH] Expected 2 argument(s) but got 1.
 ```
 
+Every report also records how the run was configured: the agent's own name and version, the model
+and effort, the permission mode the session ran in (the sandbox, for Codex), the allowed tool kinds
+and the fix and retry budgets. The summary shows it on one line, e.g. `agent:
+@agentclientprotocol/claude-agent-acp 0.82.0, model sonnet, effort medium, mode acceptEdits`, so two
+runs of the same campaign can be told apart.
+
 The JSON adds per-run token/cost accounting, every tool call with timings, and diagnostics counted
 by code — so a suite run answers "how many succeeded, and where did the rest fail" directly. Its
 `negativeFiles` field holds the same expected, missing and unexpected lists for each negative file,

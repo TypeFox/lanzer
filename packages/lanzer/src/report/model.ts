@@ -1,5 +1,5 @@
 import type { LanzerToolCallRecord } from '../acp/tool-host.js';
-import type { LanzerAgentUsage, LanzerAttemptRecord } from '../acp/run.js';
+import type { LanzerAgentUsage, LanzerAttemptRecord, LanzerRunConfiguration } from '../acp/run.js';
 import type { LanzerDiagnosticsOutcome, LanzerDocumentIssue } from '../services/types.js';
 
 /**
@@ -79,6 +79,8 @@ export interface LanzerRunReport {
     stopReason: string;
     durationMs: number;
     sessionId: string;
+    /** Which agent ran, how it was configured, and the permission mode it ran in. */
+    configuration?: LanzerRunConfiguration;
     files: LanzerReportFile[];
     issues: LanzerIssueTally;
     /**

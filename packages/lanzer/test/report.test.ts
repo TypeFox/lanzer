@@ -2,11 +2,12 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, test } from 'vitest';
-import type { LanzerAgentRunResult } from '../src/acp/run.js';
+import type { LanzerAgentRunResult, LanzerRunConfiguration } from '../src/acp/run.js';
 import { buildLanzerGenerationJobs, type LanzerGenerationJob } from '../src/campaign/jobs.js';
 import { resolveLanzerCampaign } from '../src/campaign/map.js';
 import { buildLanzerCampaignTask } from '../src/campaign/prompt.js';
 import { buildLanzerRunReport } from '../src/report/build.js';
+import { renderLanzerRunSummary } from '../src/report/render.js';
 import type { LanzerCampaignValidationResult, LanzerDocumentIssue } from '../src/services/types.js';
 import { loadCampaignSpecs, miniCampaign } from './helpers.js';
 
@@ -120,5 +121,44 @@ describe('failed stage', () => {
             failure: { stage: 'launch', message: 'no such command' }
         });
         expect(report.failedStage).toBe('launch');
+    });
+});
+
+describe('the run configuration', () => {
+    const configuration: LanzerRunConfiguration = {
+        transport: 'acp',
+        command: 'npx',
+        args: ['claude-agent-acp'],
+        agent: { name: '@agentclientprotocol/claude-agent-acp', version: '0.82.0' },
+        model: 'sonnet',
+        effort: 'medium',
+        permissionMode: 'acceptEdits',
+        allowedToolKinds: ['edit', 'other', 'read', 'search', 'think'],
+        toolAllowlist: ['Read', 'Write'],
+        fixIterations: 1,
+        retryIterations: 1
+    };
+
+    test('is copied into the report and summarised on one line', async () => {
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { configuration }), validation: verdict() });
+        expect(report.configuration).toEqual(configuration);
+        expect(renderLanzerRunSummary(report)).toContain(
+            'agent: @agentclientprotocol/claude-agent-acp 0.82.0, model sonnet, effort medium, mode acceptEdits'
+        );
+    });
+
+    test('names the command when the agent did not say who it is, and the sandbox for Codex', async () => {
+        const codex: LanzerRunConfiguration = {
+            transport: 'codex-mcp', command: 'npx', args: ['-y', '@openai/codex', 'mcp-server'],
+            permissionMode: 'workspace-write', allowedToolKinds: ['edit', 'read'], fixIterations: 2, retryIterations: 1
+        };
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob, { configuration: codex }), validation: verdict() });
+        expect(renderLanzerRunSummary(report)).toContain('agent: npx -y @openai/codex mcp-server, sandbox workspace-write');
+    });
+
+    test('a hand-built result without one gives a report without one', async () => {
+        const report = await buildLanzerRunReport({ campaign: 'demo', jobs: [writtenJob], run: run(writtenJob), validation: verdict() });
+        expect(report).not.toHaveProperty('configuration');
+        expect(renderLanzerRunSummary(report)).not.toContain('agent:');
     });
 });
