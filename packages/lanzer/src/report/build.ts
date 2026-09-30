@@ -6,6 +6,7 @@ import {
     LANZER_RUN_STAGE_DESCRIPTIONS,
     type LanzerIssueTally,
     type LanzerReportFile,
+    type LanzerRunFingerprint,
     type LanzerRunReport,
     type LanzerRunStage,
     type LanzerSuiteReport,
@@ -38,6 +39,8 @@ export interface BuildLanzerRunReportInput {
     ok?: boolean;
     /** Set when the run threw before producing a result — a launch or session failure. */
     failure?: { stage: LanzerRunStage; message: string };
+    /** What the run measured, from {@link fingerprintLanzerRun}. */
+    fingerprint?: LanzerRunFingerprint;
 }
 
 async function describeFiles(jobs: LanzerGenerationJob[]): Promise<LanzerReportFile[]> {
@@ -143,6 +146,7 @@ export async function buildLanzerRunReport(input: BuildLanzerRunReportInput): Pr
         durationMs: run.durationMs,
         sessionId: run.sessionId,
         ...(run.configuration ? { configuration: run.configuration } : {}),
+        ...(input.fingerprint ? { fingerprint: input.fingerprint } : {}),
         files,
         issues: tallyIssues(validation),
         documents: (validation?.documents ?? []).map((document) => ({

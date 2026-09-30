@@ -1,0 +1,19 @@
+// Benchmark: a negative file that has to fail in exactly one way. Assignability between classes
+// runs one way only — a subclass fits a superclass-typed target, not the reverse — so the program
+// must be right everywhere except one assignment that goes the wrong way. Any second error, or
+// the mistake made with primitives instead, fails the campaign.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign negativeSubclass {
+    description "A small class hierarchy used correctly, except for one superclass instance stored in a subclass-typed variable."
+    workspace "negative-subclass"
+
+    file mistake at "mistake.lox" generates LoxProgram {
+        description "class Animal and class Dog < Animal, each with a method; a Dog stored in an Animal-typed variable (fine), then an Animal stored in a Dog-typed variable (the one error)."
+        require Class[name="Animal"]
+        require Class[name="Dog"][superClass->Class[name="Animal"]]
+        require VariableDeclaration > TypeReference[reference->Class[name="Animal"]]
+        require VariableDeclaration > TypeReference[reference->Class[name="Dog"]]
+        expect error code "LOX_TYPE_NOT_ASSIGNABLE" message matches "^Type 'Animal' is not assignable to type 'Dog'"
+    }
+}

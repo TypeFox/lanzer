@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { NodeFileSystem } from 'langium/node';
@@ -8,21 +9,26 @@ import {
     findLanzerGenerationJob,
     loadLanzerDocumentFromFile,
     buildLanzerSuiteReport,
+    collectLanzerCampaignFiles,
+    compareLanzerSuiteReports,
     describeSelectableTypes,
     loadGrammarsFor,
     meetsMinPass,
     parseMinPass,
     permissiveLanzerPolicy,
     previewLanzerCampaignTask,
+    readLanzerSuiteReport,
+    renderLanzerSuiteComparison,
     renderLanzerRunSummary,
     renderLanzerSuiteSummary,
     renderSelectableTypes,
     resolveAcpOptionsFromEnv,
     resolveLanzerCampaignFile,
-    resolvePermissionPolicy
+    resolvePermissionPolicy,
+    type LanzerSuiteReport
 } from 'lanzer';
 import { createLanzerLoxServices } from './lox-host.js';
-import { runLoxCampaignFile } from './run-campaign.js';
+import { runLoxCampaignFiles } from './run-campaign.js';
 
 /** Validate a campaign file and print the result (mirrors `lanzer validate`). */
 async function validateAction(fileName: string, options: { json?: boolean }): Promise<void> {
@@ -157,7 +163,7 @@ export function createLoxLanzerCli(): Command {
 
     program
         .command('generate')
-        .argument('<file>', 'Lanzer campaign file')
+        .argument('<files...>', 'Lanzer campaign files, or folders of them: several run as one suite with one report')
         .option('--command <bin>', 'override the ACP command (else LANZER_ACP_COMMAND)')
         .option('--model <model>', 'override the model (else LANZER_ACP_MODEL)')
         .option('--max-attempts <n>', 'override prompts per session (else LANZER_ACP_MAX_ATTEMPTS)')
@@ -170,8 +176,9 @@ export function createLoxLanzerCli(): Command {
         .option('--runs <n>', 'run each campaign n identical times, each in its own copy of the workspace, and report the pass rate')
         .option('--parallel <k>', 'with --runs, run at most k at once (default 1)')
         .option('--min-pass <share>', 'the share of runs each campaign must pass for a zero exit code: k/n (e.g. 2/3) or a percentage (default: all)')
-        .description('run a .lanzer campaign through an agent to generate the target .lox file(s)')
-        .action(async (file: string, options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string }) => {
+        .option('--skill <dir>', 'use this write-lox skill folder instead of the default one, e.g. to benchmark a new version of it')
+        .description('run .lanzer campaigns through an agent to generate the target .lox file(s)')
+        .action(async (paths: string[], options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string; skill?: string }) => {
             // Checked before anything runs: a typo here should not cost a batch of agent runs.
             const runs = options.runs === undefined ? 1 : Number.parseInt(options.runs, 10);
             const parallel = options.parallel === undefined ? 1 : Number.parseInt(options.parallel, 10);
@@ -185,6 +192,21 @@ export function createLoxLanzerCli(): Command {
             }
             if (!Number.isInteger(runs) || runs < 1 || !Number.isInteger(parallel) || parallel < 1) {
                 console.error('--runs and --parallel must be whole numbers of at least 1');
+                process.exitCode = 1;
+                return;
+            }
+            // A skill folder without a SKILL.md is almost always a wrong path, and a benchmark of
+            // it would measure the agent with no skill at all.
+            if (options.skill && !existsSync(resolve(options.skill, 'SKILL.md'))) {
+                console.error(`--skill ${options.skill} has no SKILL.md: pass the skill's folder`);
+                process.exitCode = 1;
+                return;
+            }
+            let files: string[];
+            try {
+                files = await collectLanzerCampaignFiles(paths);
+            } catch (error) {
+                console.error(error instanceof Error ? error.message : String(error));
                 process.exitCode = 1;
                 return;
             }
@@ -222,7 +244,7 @@ export function createLoxLanzerCli(): Command {
                 console.error(`Agent permissions: ${describePermissionPolicy(acp.permissions)}`);
             }
 
-            const { runs: results } = await runLoxCampaignFile(file, acp, { runs, parallel });
+            const { runs: results } = await runLoxCampaignFiles(files, acp, { runs, parallel }, { skillPath: options.skill });
             const reports = results.flatMap((run) => (run.report ? [run.report] : []));
 
             for (const run of results) {
@@ -256,7 +278,7 @@ export function createLoxLanzerCli(): Command {
                 if (options.report !== false) {
                     const path = typeof options.report === 'string'
                         ? resolve(options.report)
-                        : resolve('.lanzer', 'reports', `${reports[0].campaign}-${stamp.replace(/[:.]/g, '-')}.json`);
+                        : resolve('.lanzer', 'reports', `${files.length > 1 ? 'suite' : reports[0].campaign}-${stamp.replace(/[:.]/g, '-')}.json`);
                     await mkdir(dirname(path), { recursive: true });
                     await writeFile(path, JSON.stringify(suite, null, 2), 'utf8');
                     console.error(`report: ${path}`);
@@ -269,6 +291,26 @@ export function createLoxLanzerCli(): Command {
             // A run that ended without a report still counts when it failed.
             const unreportedFailure = results.some((run) => !run.report && run.validation?.ok === false);
             if (shortOfShare || unreportedFailure) process.exitCode = 1;
+        });
+
+    program
+        .command('compare')
+        .argument('<baseline>', 'suite report of the setup to compare against (a)')
+        .argument('<candidate>', 'suite report of the setup being tried (b)')
+        .option('--json', 'print the comparison as JSON')
+        .description('compare two generate reports: pass rates, cost, failure stages, and what changed between the setups')
+        .action(async (baseline: string, candidate: string, options: { json?: boolean }) => {
+            let a: LanzerSuiteReport;
+            let b: LanzerSuiteReport;
+            try {
+                [a, b] = await Promise.all([readLanzerSuiteReport(baseline), readLanzerSuiteReport(candidate)]);
+            } catch (error) {
+                console.error(error instanceof Error ? error.message : String(error));
+                process.exitCode = 1;
+                return;
+            }
+            const comparison = compareLanzerSuiteReports(a, b);
+            console.log(options.json ? JSON.stringify(comparison, null, 2) : renderLanzerSuiteComparison(comparison, { a: baseline, b: candidate }));
         });
 
     return program;

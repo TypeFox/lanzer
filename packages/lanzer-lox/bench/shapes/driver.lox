@@ -1,0 +1,17 @@
+// Provided test driver for shapes.lanzer. Do not change it.
+var shape = Shape();
+print shape.area();
+print shape.describe();
+
+var rectangle = Rectangle();
+rectangle.width = 2;
+rectangle.height = 3;
+print rectangle.area();
+print rectangle.describe();
+
+var square = Square();
+square.setSide(4);
+print square.area();
+print square.describe();
+square.setSide(5);
+print square.describe();

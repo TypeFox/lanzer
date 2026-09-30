@@ -1,0 +1,13 @@
+// Provided test driver for higher-order.lanzer. Do not change it.
+fun double(x: number): number {
+    return x * 2;
+}
+
+var addThree = makeAdder(3);
+print addThree(5);
+print makeAdder(10)(3);
+print compose(double, addThree)(5);
+print compose(addThree, double)(4);
+print twice(makeAdder(7))(0);
+print applyTimes(double, 3, 5);
+print applyTimes(addThree, 0, 5);

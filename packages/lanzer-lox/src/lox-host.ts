@@ -8,7 +8,7 @@ import {
     type LoxServices
 } from 'langium-lox';
 import { createLanzerHostServices, type LanzerHostServices } from 'lanzer';
-import { LoxLanzerCampaignRunner, LoxLanzerService } from './lox-lanzer-service.js';
+import { LoxLanzerCampaignRunner, LoxLanzerService, type LoxLanzerOptions } from './lox-lanzer-service.js';
 
 /**
  * Combined service container that targets Lanzer at the **unmodified** `langium-lox` language.
@@ -24,7 +24,8 @@ import { LoxLanzerCampaignRunner, LoxLanzerService } from './lox-lanzer-service.
  * with a single composite reflection — is delegated to {@link createLanzerHostServices}.
  */
 export function createLanzerLoxServices(
-    context: DefaultSharedModuleContext
+    context: DefaultSharedModuleContext,
+    options: LoxLanzerOptions = {}
 ): LanzerHostServices<LoxServices> {
     return createLanzerHostServices(
         context,
@@ -34,7 +35,7 @@ export function createLanzerLoxServices(
             astReflection: () => new LoxAstReflection()
         },
         {
-            service: (shared, language) => new LoxLanzerService(shared, language),
+            service: (shared, language) => new LoxLanzerService(shared, language, options),
             campaignRunner: (services) => new LoxLanzerCampaignRunner(services)
         }
     );

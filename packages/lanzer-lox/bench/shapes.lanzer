@@ -1,0 +1,27 @@
+// Benchmark: a class hierarchy with overriding, an inherited method and `super`. The typed dialect
+// constructs with no arguments and starts fields as nil, so a shape is built and then filled in.
+// The driver calls each method through a variable of the object's own class: langium-lox resolves
+// a method by the declared class, so calls through a `Shape`-typed variable would not dispatch.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign shapes {
+    description "Shape, Rectangle and Square classes with overridden area() and describe(), exercised by a provided test driver."
+    workspace "shapes"
+
+    file lib at "lib.lox" generates LoxProgram {
+        description "class Shape with area(): number (0) and describe(): string ('shape with area ' + area()); class Rectangle < Shape with width and height fields, overriding area() and describe() ('rectangle ' + width + 'x' + height); class Square < Rectangle with setSide(side: number): void setting both, whose describe() is 'square, a ' + super.describe()."
+        require Class[name="Shape"]
+        require Class[name="Rectangle"][superClass->Class[name="Shape"]]
+        require Class[name="Square"][superClass->Class[name="Rectangle"]]
+        require Class[name="Square"] >> MethodMember[name="describe"]
+        require Class[name="Square"] >> MethodMember[name="setSide"]
+        forbid PrintStatement
+    }
+
+    support driver at "driver.lox" description "The provided test driver; do not change it."
+
+    run driver {
+        expect runs
+        expect output "0\nshape with area 0\n6\nrectangle 2x3\n16\nsquare, a rectangle 4x4\nsquare, a rectangle 5x5\n"
+    }
+}

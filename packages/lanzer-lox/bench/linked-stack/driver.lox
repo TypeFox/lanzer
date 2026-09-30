@@ -1,0 +1,16 @@
+// Provided test driver for linked-stack.lanzer. Do not change it.
+var stack = Stack();
+print stack.isEmpty();
+print stack.size();
+stack.push(10);
+stack.push(20);
+stack.push(30);
+print stack.size();
+print stack.peek();
+print stack.pop();
+print stack.pop();
+print stack.size();
+print stack.isEmpty();
+print stack.pop();
+print stack.isEmpty();
+print stack.size();

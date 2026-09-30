@@ -67,6 +67,29 @@ export interface LanzerReportDocument {
     expectsDiagnostics?: boolean;
 }
 
+/** A file or folder a run depended on, with a SHA-256 of its content when it could be read. */
+export interface LanzerFingerprintEntry {
+    path: string;
+    hash?: string;
+}
+
+/**
+ * What a run measured, beyond the agent's configuration: enough to say whether two reports were
+ * produced by the same skill, grammar and campaign, or which of them changed.
+ */
+export interface LanzerRunFingerprint {
+    lanzerVersion: string;
+    /**
+     * The DSL skill the agent was pointed at. Its hash covers every file in the skill's folder; a
+     * skill given by name alone has neither.
+     */
+    skill?: { name?: string; path?: string; hash?: string };
+    /** The grammars the campaign imports. */
+    grammars: LanzerFingerprintEntry[];
+    /** The campaign file itself. */
+    campaign?: LanzerFingerprintEntry;
+}
+
 export interface LanzerRunReport {
     campaign: string;
     ok: boolean;
@@ -83,6 +106,8 @@ export interface LanzerRunReport {
     sessionId: string;
     /** Which agent ran, how it was configured, and the permission mode it ran in. */
     configuration?: LanzerRunConfiguration;
+    /** What the run measured: Lanzer version, DSL skill, grammars and campaign, with content hashes. */
+    fingerprint?: LanzerRunFingerprint;
     files: LanzerReportFile[];
     issues: LanzerIssueTally;
     /**

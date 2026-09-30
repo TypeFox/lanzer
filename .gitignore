@@ -34,4 +34,8 @@ packages/lanzer-lox/.lanzer
 .lanzer
 
 packages/lanzer-lox/examples/test/
+# Benchmark output: what an agent generated, and the per-run workspace copies of --runs
+packages/lanzer-lox/bench/*/lib.lox
+packages/lanzer-lox/bench/*/mistake.lox
+packages/lanzer-lox/bench/*.runs/
 

@@ -390,6 +390,68 @@ node --env-file=.env ./bin/lox-lanzer.js generate ./examples/fizzbuzz.lanzer --r
 
 Without `--runs`, `generate` works in the workspace itself, as before.
 
+#### Benchmarking a skill or an agent
+
+`generate` takes several campaign files, or folders of them, and runs them as one suite with one
+report. `compare` then puts two reports side by side — the way to answer "did write-lox v2 help?"
+or "Claude or Codex on this DSL?". `lanzer-lox/bench/` holds a Lox suite for this: five campaigns
+built on the dialect's traps (no `%`, comparison binding tighter than `*`, `nil` as an empty
+class-typed value, inheritance and `super`, functions returned as values, and a negative file),
+each with a reference solution in the tests proving it can be met.
+
+```shell
+node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --report .lanzer/reports/write-lox-v1.json
+# edit ../../skills/write-lox, then run the same suite again:
+node --env-file=.env ./bin/lox-lanzer.js generate ./bench --runs 5 --report .lanzer/reports/write-lox-v2.json
+node ./bin/lox-lanzer.js compare .lanzer/reports/write-lox-v1.json .lanzer/reports/write-lox-v2.json
+```
+
+`--skill <dir>` points a run at another copy of the skill, to keep both versions side by side;
+`--model`, `--command` and `LANZER_ACP_*` change the agent instead. `compare` prints the setup
+difference first, then the numbers (these are illustrative):
+
+```text
+setup:
+  skill: write-lox ed17db57ba69 → write-lox 4c1d9e0a7b22
+
+pass rate: 17/25 (68%) → 22/25 (88%), +20 pts on shared campaigns
+cost per run: 0.2220 USD → 0.2300 USD (+4%)
+time per run: 40.0s → 40.0s (±0%)
+tokens per run: 52,000 → 52,000 (±0%)
+
+by campaign:
+  higherOrder       5/5 → 5/5  unchanged, ±0 pts
+  integerMath       2/5 (2× syntax, 1× semantics) → 4/5 (1× semantics)  improved, +40 pts
+  linkedStack       4/5 (1× behaviour) → 4/5 (1× behaviour)  unchanged, ±0 pts
+  negativeSubclass  2/5 (3× diagnostics) → 4/5 (1× diagnostics)  improved, +40 pts
+  shapes            4/5 (1× semantics) → 5/5  improved, +20 pts
+
+failures by stage (per run):
+  syntax        2 (8%) → 0 (0%)
+  semantics     2 (8%) → 1 (4%)
+  diagnostics   3 (12%) → 1 (4%)
+  behaviour     1 (4%) → 1 (4%)
+
+diagnostic codes that moved (occurrences per run):
+  LOX_PARSER_ERROR: 0.08 → 0.00
+  LOX_TYPE_NOT_ASSIGNABLE: 0.04 → 0.00
+```
+
+- **What was measured.** Each run's report carries a `fingerprint`: the Lanzer version, the DSL
+  skill's name, path and a content hash over every file in its folder, each imported grammar's hash,
+  and the campaign file's hash. With the run configuration (agent, model, effort, permission mode,
+  budgets), that is what `compare` lists under `setup`. A skill edited in place keeps its name and
+  path; its hash is what tells the two apart. When nothing differs, `compare` says so: the numbers
+  are then run-to-run variation.
+- **Per run, not totals.** Cost, time, tokens, stage failures and diagnostic codes are divided by
+  each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
+  delta counts only the campaigns both reports ran; a campaign on one side only is `added` or
+  `removed`.
+- **No significance claims.** A campaign with fewer than 5 runs on either side is flagged — one run
+  flipping moves its rate by 20 points or more — with a hint to rerun with `--runs`. `compare` does
+  not run a statistical test; at these sample sizes it would mostly say "not enough runs".
+- `--json` prints the comparison as data. The generic `lanzer` CLI has the same `compare` command.
+
 ### 2. Library fast path
 
 Call one function and let it orchestrate jobs → policy → DSL skill → ACP run → requirement

@@ -26,6 +26,12 @@ function isTopLevelDeclaration(element: LoxElement): boolean {
     return isFunctionDeclaration(element) || isClass(element) || isVariableDeclaration(element);
 }
 
+/** Choices a Lox host can make per run. */
+export interface LoxLanzerOptions {
+    /** The DSL skill folder to point the agent at, instead of the `write-lox` one found by default. */
+    skillPath?: string;
+}
+
 /** How much output a run keeps; a program printing past this is cut off, not the process. */
 const LOX_OUTPUT_LIMIT = 64 * 1024;
 
@@ -46,6 +52,17 @@ const LOX_OUTPUT_LIMIT = 64 * 1024;
  * standalone package that merely depends on `langium-lox` — the language itself is never modified.
  */
 export class LoxLanzerService extends DefaultLanzerService {
+    /**
+     * A `write-lox` skill folder to use instead of the one found beside the repo or in
+     * `~/.claude/skills` — how a benchmark tries a second version of the skill against the first.
+     */
+    readonly skillPath: string | undefined;
+
+    constructor(shared: ConstructorParameters<typeof DefaultLanzerService>[0], language: ConstructorParameters<typeof DefaultLanzerService>[1], options: LoxLanzerOptions = {}) {
+        super(shared, language);
+        this.skillPath = options.skillPath ? resolve(options.skillPath) : undefined;
+    }
+
     /**
      * Layer Lox-specific generation guidance on top of the base policy (which supplies only the
      * grammar reference path) by adding Lox instructions and required/forbidden practices.
@@ -101,9 +118,12 @@ export class LoxLanzerService extends DefaultLanzerService {
     /**
      * Point the generator at the `write-lox` skill so it has the full Lox language surface
      * before producing code. Resolution order: project-local `<repoRoot>/skills/write-lox`,
-     * then the user-level `~/.claude/skills/write-lox` install.
+     * then the user-level `~/.claude/skills/write-lox` install — unless a skill path was chosen.
      */
     override async dslSkill(job: LanzerGenerationJob): Promise<LanzerDslSkillReference | undefined> {
+        // A chosen skill is used as given, even when it is broken: benchmarking a broken skill
+        // should measure it, not silently fall back to the default one.
+        if (this.skillPath) return { name: 'write-lox', path: this.skillPath };
         const candidates: string[] = [];
         const repoRoot = this.findRepoRoot(job.grammarBaseDir);
         if (repoRoot) candidates.push(resolve(repoRoot, 'skills', 'write-lox'));
@@ -175,9 +195,11 @@ export class LoxLanzerService extends DefaultLanzerService {
      * copy-from reference file in the generation prompt.
      */
     private findExampleReference(start?: string): LanzerGenerationPolicyReferenceFile | undefined {
-        const repoRoot = this.findRepoRoot(start);
-        if (!repoRoot) return undefined;
-        const path = resolve(repoRoot, 'skills', 'write-lox', 'references', 'examples.lox');
+        // The example is part of the skill: a chosen skill brings its own, or none.
+        const repoRoot = this.skillPath ? undefined : this.findRepoRoot(start);
+        const skillRoot = this.skillPath ?? (repoRoot && resolve(repoRoot, 'skills', 'write-lox'));
+        if (!skillRoot) return undefined;
+        const path = resolve(skillRoot, 'references', 'examples.lox');
         if (!existsSync(path)) return undefined;
         return {
             label: 'write-lox-example',

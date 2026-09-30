@@ -1,0 +1,26 @@
+// Benchmark: integer arithmetic in a language without `%` or integer division. `/` gives a
+// decimal, so remainders have to be built from subtraction — and an agent that reaches for `%`
+// fails at syntax, which is the grammar reference not landing. Comparison also binds tighter than
+// `*` here, so `d * d <= n` is a type error: the precedence table has to be read, not assumed.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign integerMath {
+    description "remainder, gcd and isPrime over whole numbers, exercised by a provided test driver."
+    workspace "integer-math"
+
+    file lib at "lib.lox" generates LoxProgram {
+        description "remainder(a, b) for whole a >= 0 and b > 0; gcd(a, b) by Euclid's algorithm, recursively, using remainder; isPrime(n), false below 2."
+        require FunctionDeclaration[name="remainder"]
+        require FunctionDeclaration[name="gcd"] >> MemberCall[element->FunctionDeclaration[name="gcd"]]
+        require FunctionDeclaration[name="gcd"] >> MemberCall[element->FunctionDeclaration[name="remainder"]]
+        require FunctionDeclaration[name="isPrime"]
+        forbid PrintStatement
+    }
+
+    support driver at "driver.lox" description "The provided test driver; do not change it."
+
+    run driver {
+        expect runs
+        expect output "2\n0\n21\n6\n1\n2 3 5 7 11 13 17 19 23 29\nfalse\nfalse\n"
+    }
+}

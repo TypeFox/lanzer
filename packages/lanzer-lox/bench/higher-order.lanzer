@@ -1,0 +1,25 @@
+// Benchmark: functions as values. Lox has no lambda expressions, only function types, so a
+// function that returns a new function has to declare a nested one and return it — and every
+// parameter and return type, including `(number) => number`, has to be spelled out.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign higherOrder {
+    description "makeAdder, compose, twice and applyTimes over (number) => number functions, exercised by a provided test driver."
+    workspace "higher-order"
+
+    file lib at "lib.lox" generates LoxProgram {
+        description "makeAdder(n) returns a function adding n; compose(f, g) returns a function computing f(g(x)); twice(f) is compose(f, f); applyTimes(f, count, x) applies f to x count times. Every function taken or returned has type (number) => number."
+        require FunctionDeclaration[name="makeAdder"] >> FunctionDeclaration
+        require FunctionDeclaration[name="compose"] >> FunctionDeclaration
+        require FunctionDeclaration[name="twice"] >> MemberCall[element->FunctionDeclaration[name="compose"]]
+        require FunctionDeclaration[name="applyTimes"]
+        forbid PrintStatement
+    }
+
+    support driver at "driver.lox" description "The provided test driver; do not change it."
+
+    run driver {
+        expect runs
+        expect output "8\n13\n16\n11\n14\n40\n5\n"
+    }
+}

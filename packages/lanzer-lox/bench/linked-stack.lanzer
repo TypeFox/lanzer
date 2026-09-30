@@ -1,0 +1,28 @@
+// Benchmark: a stack of numbers built from linked nodes. Lox has no arrays, so the list has to be
+// made of objects, and an empty list is a class-typed `nil` — the part the typed dialect makes
+// hard. A provided driver exercises the stack and prints what it returns.
+import "../../langium-lox/langium/src/language-server/lox.langium"
+
+campaign linkedStack {
+    description "A stack of numbers made of linked Node objects, exercised by a provided test driver."
+    workspace "linked-stack"
+
+    file lib at "lib.lox" generates LoxProgram {
+        description "class Node { value: number, next: Node } and class Stack with push(value), pop(): number, peek(): number, size(): number and isEmpty(): boolean. A new Stack's fields start as nil, so an empty stack is one whose top node is nil."
+        require Class[name="Node"]
+        require Class[name="Stack"]
+        require MethodMember[name="push"]
+        require MethodMember[name="pop"]
+        require MethodMember[name="peek"]
+        require MethodMember[name="size"]
+        require MethodMember[name="isEmpty"]
+        forbid PrintStatement
+    }
+
+    support driver at "driver.lox" description "The provided test driver; do not change it."
+
+    run driver {
+        expect runs
+        expect output "true\n0\n3\n30\n30\n20\n1\nfalse\n10\ntrue\n0\n"
+    }
+}

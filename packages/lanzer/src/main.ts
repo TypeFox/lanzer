@@ -9,6 +9,8 @@ import { loadLanzerDocumentFromFile } from './campaign/load.js';
 import { resolveLanzerCampaignFile } from './campaign/resolve.js';
 import { describeSelectableTypes, loadGrammarsFor, renderSelectableTypes } from './grammar/type-catalog.js';
 import { createLanzerServices } from './lanzer-module.js';
+import { compareLanzerSuiteReports, readLanzerSuiteReport, renderLanzerSuiteComparison } from './report/compare.js';
+import type { LanzerSuiteReport } from './report/model.js';
 import { previewLanzerCampaignTask, resolveAcpOptionsFromEnv } from './services/campaign-run.js';
 import { DefaultLanzerService } from './services/default-services.js';
 
@@ -139,6 +141,21 @@ export async function typesAction(fileName: string, options: { json?: boolean })
     console.log(options.json ? JSON.stringify(types, null, 2) : renderSelectableTypes(types));
 }
 
+/** Compare two suite reports: `baseline` is a, `candidate` is b. */
+export async function compareAction(baseline: string, candidate: string, options: { json?: boolean }): Promise<void> {
+    let a: LanzerSuiteReport;
+    let b: LanzerSuiteReport;
+    try {
+        [a, b] = await Promise.all([readLanzerSuiteReport(baseline), readLanzerSuiteReport(candidate)]);
+    } catch (error) {
+        console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+        process.exitCode = 1;
+        return;
+    }
+    const comparison = compareLanzerSuiteReports(a, b);
+    console.log(options.json ? JSON.stringify(comparison, null, 2) : renderLanzerSuiteComparison(comparison, { a: baseline, b: candidate }));
+}
+
 export default function main(): void {
     const program = new Command();
     program.version(JSON.parse(packageContent).version);
@@ -165,6 +182,14 @@ export default function main(): void {
         .option('--json', 'print the types as JSON')
         .description('list the type names a selector can use, with their properties, subtypes and direct children')
         .action(typesAction);
+
+    program
+        .command('compare')
+        .argument('<baseline>', 'suite report of the setup to compare against (a)')
+        .argument('<candidate>', 'suite report of the setup being tried (b)')
+        .option('--json', 'print the comparison as JSON')
+        .description('compare two generate reports: pass rates, cost, failure stages, and what changed between the setups')
+        .action(compareAction);
 
     program.parse(process.argv);
 }

@@ -7,9 +7,11 @@ import {
     type LanzerAgentRunResult,
     type LanzerRepeatedRunsResult,
     type LanzerRepeatOptions,
+    type LanzerResolvedCampaign,
     type RunLanzerCampaignDeps
 } from 'lanzer';
 import { createLanzerLoxServices } from './lox-host.js';
+import type { LoxLanzerOptions } from './lox-lanzer-service.js';
 
 export interface RunLoxCampaignResult {
     /** Every run, in order: one per campaign, or `repeat.runs` per campaign when repeating. */
@@ -23,8 +25,8 @@ export interface RunLoxCampaignResult {
  * loaded, so two runs, or two campaigns, sharing services could pass on a name only the other
  * defined.
  */
-function createLoxDeps(): RunLanzerCampaignDeps {
-    const { Lanzer } = createLanzerLoxServices(NodeFileSystem);
+function createLoxDeps(options: LoxLanzerOptions = {}): RunLanzerCampaignDeps {
+    const { Lanzer } = createLanzerLoxServices(NodeFileSystem, options);
     return { service: Lanzer.lanzer.Lanzer, runner: Lanzer.lanzer.CampaignRunner };
 }
 
@@ -46,25 +48,51 @@ function createLoxDeps(): RunLanzerCampaignDeps {
 export async function runLoxCampaignFile(
     campaignFile: string,
     acp: LanzerAcpOptions,
-    repeat?: LanzerRepeatOptions
+    repeat?: LanzerRepeatOptions,
+    options?: LoxLanzerOptions
 ): Promise<RunLoxCampaignResult> {
-    const resolved = await resolveLanzerCampaignFile(campaignFile, { validate: true });
-    if (resolved.issues.length > 0) {
-        const detail = resolved.issues.map((issue) => `[${issue.kind}] ${issue.message}`).join('\n');
-        throw new Error(`Campaign file is invalid:\n${detail}`);
+    return runLoxCampaignFiles([campaignFile], acp, repeat, options);
+}
+
+/**
+ * {@link runLoxCampaignFile} over several campaign files, as one suite: every campaign of every
+ * file, in file order.
+ *
+ * Every file is resolved before the first run starts, so a typo in the last file of a suite fails
+ * at once rather than after the agent runs for the others. It throws with every file's issues.
+ */
+export async function runLoxCampaignFiles(
+    campaignFiles: string[],
+    acp: LanzerAcpOptions,
+    repeat?: LanzerRepeatOptions,
+    options: LoxLanzerOptions = {}
+): Promise<RunLoxCampaignResult> {
+    const campaigns: LanzerResolvedCampaign[] = [];
+    const problems: string[] = [];
+    for (const file of campaignFiles) {
+        const resolved = await resolveLanzerCampaignFile(file, { validate: true });
+        if (resolved.issues.length > 0) {
+            const prefix = campaignFiles.length > 1 ? `${file}: ` : '';
+            problems.push(...resolved.issues.map((issue) => `${prefix}[${issue.kind}] ${issue.message}`));
+        }
+        campaigns.push(...resolved.resolvedCampaigns);
+    }
+    if (problems.length > 0) {
+        throw new Error(`Campaign file is invalid:\n${problems.join('\n')}`);
     }
 
+    const createDeps = () => createLoxDeps(options);
     if (repeat && repeat.runs > 1) {
         const batches: LanzerRepeatedRunsResult[] = [];
-        for (const campaign of resolved.resolvedCampaigns) {
-            batches.push(await runLanzerCampaignRepeatedly(campaign, createLoxDeps, acp, repeat));
+        for (const campaign of campaigns) {
+            batches.push(await runLanzerCampaignRepeatedly(campaign, createDeps, acp, repeat));
         }
         return { runs: batches.flatMap((batch) => batch.runs.map((run) => run.result)), batches };
     }
 
     const runs: LanzerAgentRunResult[] = [];
-    for (const campaign of resolved.resolvedCampaigns) {
-        runs.push(await runLanzerCampaign(campaign, createLoxDeps(), acp));
+    for (const campaign of campaigns) {
+        runs.push(await runLanzerCampaign(campaign, createDeps(), acp));
     }
     return { runs };
 }

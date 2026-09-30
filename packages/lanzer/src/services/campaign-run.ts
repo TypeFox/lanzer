@@ -16,6 +16,7 @@ import {
 import { formatLanzerIssue } from '../acp/issues.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
+import { fingerprintLanzerRun } from '../report/fingerprint.js';
 import { findUnknownDiagnosticCodes } from '../validations/diagnostic-validations.js';
 import type { LanzerCampaignValidationResult } from './types.js';
 import { readFile } from 'node:fs/promises';
@@ -139,6 +140,9 @@ export async function runLanzerCampaign(
     acp: LanzerAcpOptions
 ): Promise<LanzerAgentRunResult> {
     const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, deps.service);
+    // Taken before the agent starts: the skill and grammars are what the agent was given, and it
+    // is not meant to change them.
+    const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill);
 
     // The agent gets the campaign runner itself, not a copy of it. `validate` below flattens the
     // same result into the strings a fix prompt needs; the toolkit hands over the structured form.
@@ -245,7 +249,8 @@ export async function runLanzerCampaign(
             jobs,
             run: failed,
             failure: { stage: error.stage, message: error.message },
-            ok: false
+            ok: false,
+            fingerprint
         });
         return failed;
     }
@@ -266,7 +271,8 @@ export async function runLanzerCampaign(
         validation: lastVerdict,
         fileSetIssues,
         extraFiles: run.extraFiles,
-        ok: run.validation?.ok
+        ok: run.validation?.ok,
+        fingerprint
     });
     return run;
 }

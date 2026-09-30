@@ -1,0 +1,20 @@
+// Provided test driver for integer-math.lanzer. Do not change it.
+print remainder(17, 5);
+print remainder(12, 4);
+print gcd(1071, 462);
+print gcd(48, 18);
+print gcd(17, 5);
+
+var primes = "";
+for (var n = 0; n <= 30; n = n + 1) {
+    if (isPrime(n)) {
+        if (primes == "") {
+            primes = "" + n;
+        } else {
+            primes = primes + " " + n;
+        }
+    }
+}
+print primes;
+print isPrime(1);
+print isPrime(91);
