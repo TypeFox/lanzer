@@ -161,7 +161,8 @@ describe('the fingerprint in the report', () => {
         expect((await readSuite(isolated)).runs[0].configuration?.isolated).toBe(true);
         vi.mocked(console.log).mockClear();
         await cli('compare', plain, isolated);
-        expect(printed()).toContain('isolated: no → yes');
+        // With the evaluation-mode instruction's hash, so rewording it would show here too.
+        expect(printed()).toMatch(/isolated: no → yes [0-9a-f]{12}/);
     });
 
     test('--skill points the run at another skill folder, and its hash says it differs', async () => {

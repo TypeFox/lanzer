@@ -175,6 +175,11 @@ export interface LanzerRunConfiguration {
      * Codex's transport, and not when the run opted out. Absent in reports from before it existed.
      */
     lanzerTools?: boolean;
+    /**
+     * SHA-256 of the evaluation-mode instruction an isolated run appends to the agent's system
+     * prompt. The run's prompt hash does not cover it, and a change to its wording changes the run.
+     */
+    evaluationPromptHash?: string;
 }
 
 export interface LanzerAgentRunResult {

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { EmptyFileSystem } from 'langium';
 import { runLanzerAgentTaskOverAcp, runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
 import { resolvePermissionPolicy } from '../src/acp/permissions.js';
+import { LANZER_EVALUATION_MODE_PROMPT } from '../src/acp/evaluation.js';
 import { createLanzerServices } from '../src/lanzer-module.js';
 import { previewLanzerCampaignTask, runLanzerCampaign } from '../src/services/campaign-run.js';
 import { DefaultLanzerService } from '../src/services/default-services.js';
@@ -33,6 +34,7 @@ interface LogEntry {
     text?: string;
     mode?: string;
     meta?: string;
+    autoMemoryOff?: boolean;
 }
 
 /** One line of the fake agent's log, checked rather than asserted into shape. */
@@ -52,7 +54,8 @@ function toLogEntry(line: string): LogEntry {
         content: text('content'),
         text: text('text'),
         mode: text('mode'),
-        meta: text('meta')
+        meta: text('meta'),
+        autoMemoryOff: typeof value.autoMemoryOff === 'boolean' ? value.autoMemoryOff : undefined
     };
 }
 
@@ -148,6 +151,7 @@ describe('the session permission mode', () => {
         const session = log.find((entry) => entry.op === 'session');
         return {
             meta: session?.meta ? JSON.parse(session.meta) : undefined,
+            autoMemoryOff: session?.autoMemoryOff,
             modes: log.filter((entry) => entry.op === 'mode').map((entry) => entry.mode),
             configuration: run.configuration
         };
@@ -168,10 +172,20 @@ describe('the session permission mode', () => {
         expect(configuration?.isolated).toBe(true);
     });
 
-    test('a run is not isolated unless asked, and leaves Claude\'s settings alone', async () => {
-        const { meta, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
+    test('an isolated run turns auto-memory off and tells the agent it is being evaluated', async () => {
+        const { meta, autoMemoryOff, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES }, isolated: true });
+        expect(autoMemoryOff).toBe(true);
+        expect(meta.systemPrompt).toEqual({ append: LANZER_EVALUATION_MODE_PROMPT });
+        expect(configuration?.evaluationPromptHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    test('a run is not isolated unless asked, and leaves Claude\'s settings, memory and system prompt alone', async () => {
+        const { meta, autoMemoryOff, configuration } = await sessionSetup({ env: { FAKE_AGENT_MODES: CLAUDE_MODES } });
         expect(meta.claudeCode.options).not.toHaveProperty('settingSources');
+        expect(meta).not.toHaveProperty('systemPrompt');
+        expect(autoMemoryOff).toBe(false);
         expect(configuration?.isolated).toBe(false);
+        expect(configuration).not.toHaveProperty('evaluationPromptHash');
     });
 
     test('a read-only run stays in default, which asks', async () => {

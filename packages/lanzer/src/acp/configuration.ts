@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { resolveAttemptBudget } from './attempts.js';
+import { LANZER_EVALUATION_MODE_PROMPT } from './evaluation.js';
 import { allowedClaudeTools, resolvePermissionPolicy } from './permissions.js';
 import type { LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.js';
 
@@ -27,6 +29,9 @@ export function describeRunConfiguration(
         retryIterations,
         // Only Claude's adapter takes the setting; asked of Codex, the run is honestly not isolated.
         isolated: transport === 'acp' && options.isolated === true,
-        lanzerTools: transport === 'acp' && options.toolkit !== undefined
+        lanzerTools: transport === 'acp' && options.toolkit !== undefined,
+        ...(transport === 'acp' && options.isolated
+            ? { evaluationPromptHash: createHash('sha256').update(LANZER_EVALUATION_MODE_PROMPT).digest('hex') }
+            : {})
     };
 }

@@ -17,6 +17,7 @@ import {
 } from './permissions.js';
 import { emitRunProgress, type RecordingClientProgress } from './progress.js';
 import { sanitizeSpawnEnv } from './spawn-env.js';
+import { LANZER_EVALUATION_MODE_PROMPT, LANZER_ISOLATED_ENV } from './evaluation.js';
 import { asStageError, atStage, LanzerRunStageError, type StageTracker } from './stages.js';
 import { startLanzerToolHost, type LanzerToolHost } from './tool-host.js';
 import type { LanzerAgentRunResult, LanzerAgentValidationResult, LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.js';
@@ -205,6 +206,8 @@ async function openConfiguredSession(
         // not ask before editing. The permission mode is not among these options: the adapter
         // ignores one sent here, so it is set below instead.
         _meta: {
+            // Appended to Claude's own preset, which stays: an isolated run is told it is evaluated.
+            ...(options.isolated ? { systemPrompt: { append: LANZER_EVALUATION_MODE_PROMPT } } : {}),
             claudeCode: {
                 options: {
                     // Without this the adapter offers `bypassPermissions`, and a user whose own
@@ -344,7 +347,8 @@ function spawnAcpProcess(options: RunLanzerAgentTaskOptions, cwd: string) {
         cwd,
         env: sanitizeSpawnEnv({
             ...process.env,
-            ...options.env
+            ...options.env,
+            ...(options.isolated ? LANZER_ISOLATED_ENV : {})
         }),
         stdio: ['pipe', 'pipe', 'pipe']
     });

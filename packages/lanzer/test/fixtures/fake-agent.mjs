@@ -83,7 +83,7 @@ acp.agent({ name: 'fake-agent' })
         }
         // Offering modes the way Claude Code does, opening in the first; the session's `_meta` is
         // logged so a test can see what the client configured.
-        log({ op: 'session', ok: true, meta: JSON.stringify(params._meta ?? null) });
+        log({ op: 'session', ok: true, meta: JSON.stringify(params._meta ?? null), autoMemoryOff: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === '1' });
         return {
             sessionId: id,
             modes: { currentModeId: modeIds[0], availableModes: modeIds.map((modeId) => ({ id: modeId, name: modeId })) }

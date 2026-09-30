@@ -216,7 +216,12 @@ function describeSetup(run: LanzerRunReport): Record<string, string> {
         'host policy': !fingerprint?.promptHash
             ? notRecorded
             : `${fingerprint.policyMode ?? 'full'} ${fingerprint.policyHash ? shortHash(fingerprint.policyHash) : '(none)'}`,
-        isolated: configuration?.isolated === undefined ? notRecorded : configuration.isolated ? 'yes' : 'no',
+        isolated: configuration?.isolated === undefined
+            ? notRecorded
+            : configuration.isolated
+                // With the instruction's hash, so a reworded instruction shows as a setup change.
+                ? `yes${configuration.evaluationPromptHash ? ` ${shortHash(configuration.evaluationPromptHash)}` : ''}`
+                : 'no',
         'lanzer tools': configuration?.lanzerTools === undefined ? notRecorded : configuration.lanzerTools ? 'offered' : 'none'
     };
 }

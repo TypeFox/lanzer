@@ -380,10 +380,13 @@ flaky — identical runs split between pass and fail, so chance moves these pass
   path; its hash is what tells the two apart. When nothing differs, `compare` says so: the numbers
   are then run-to-run variation.
 - **Isolate benchmark runs.** By default the agent loads your own setup: your settings, `CLAUDE.md`
-  or `AGENTS.md` instructions, installed skills, hooks and plugins. That is what you want when
-  generating, but in a benchmark it means the skill under test is not the only advice the agent
-  gets. `--isolated` (or `LANZER_ACP_ISOLATED=1`) runs Claude without them, and `compare` shows
-  when two reports differ on it. Codex has no such switch and reads `AGENTS.md` regardless, so a
+  or `AGENTS.md` instructions, installed skills, hooks, plugins and its auto-memory. That is what you
+  want when generating, but in a benchmark the skill under test is then not the only advice the agent
+  gets — and with memory on, runs learn from each other: an agent that hits a trap can save a note
+  that the next run reads. `--isolated` (or `LANZER_ACP_ISOLATED=1`) runs Claude without your
+  settings, with auto-memory off, and tells it in its system prompt that it is being evaluated: to
+  use only the workspace, the files it was pointed at and Lanzer's tools, and to leave memory and the
+  rest of the repository alone. `compare` shows when two reports differ on it. Codex has no such switch and reads `AGENTS.md` regardless, so a
   Codex run asking for it is recorded as not isolated.
 - **Measure the skill, not the prompt.** A host's generation policy can repeat what the skill says:
   the Lox host's prompt states the typed rules and links an example file. Then even a wrong skill
