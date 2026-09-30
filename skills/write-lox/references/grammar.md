@@ -89,8 +89,13 @@ Caveats baked into this precedence table (it is unusual):
 
 - **Assignment is parsed as a left-associative binary operator** at the lowest precedence. `a = b`
   is a `BinaryExpression` with operator `=`. The left side must be assignable (a variable / member).
-- **`and`/`or` bind *tighter* than the comparison operators** here (Logical is above Comparison),
-  which is the opposite of most languages. Parenthesize to be safe and explicit.
+- **Comparisons bind tighter than every other binary operator**, `and`/`or` included, because
+  Comparison sits below Logical, Multiplication and Addition in the chain above. So
+  `a < b and b < c` works as in most languages, but `d * d <= n` parses as `d * (d <= n)` and
+  `a + 1 < b` as `a + (1 < b)` — type errors. Parenthesise arithmetic inside a comparison:
+  `(d * d) <= n`.
+- **`and`/`or` bind tighter than `*`, `/`, `+` and `-`**, the opposite of most languages. Keep
+  arithmetic out of a boolean expression's operands, or parenthesise it.
 - `*` and `/` only — **no `%`** and no exponentiation operator exist in the grammar.
 
 ## Member access and calls

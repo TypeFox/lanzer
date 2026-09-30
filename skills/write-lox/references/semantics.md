@@ -60,6 +60,11 @@ Checks that run during validation:
   takes **no arguments**; every field (own and inherited) starts as `nil`, so assign fields after
   construction. Read/write fields with `c.field` / `c.field = v;`; call methods with `c.method(args)`.
 - **`this`** is the receiver inside a method; **`super.method()`** invokes the parent's method.
+- **Methods are resolved by the declared type, not the runtime object.** A call links to the method
+  of the class the receiver is declared as, so through a `Shape`-typed variable or parameter,
+  `shape.area()` runs `Shape.area` even when the object is a `Square` that overrides it. Probe:
+  a `Square` with `side = 3` prints `9` through `var square = Square()`, but `0` through
+  `fun show(shape: Shape)` or `var asShape: Shape = square`.
 - **Inheritance** is `class Sub < Super { ... }`. Circular inheritance is rejected by the validator.
 
 ## Assignability (`isAssignable(from, to)`)
@@ -91,6 +96,12 @@ Checks that run during validation:
 - **Operators at runtime** mirror the static rules and additionally enforce operand types, throwing
   `Cannot apply operator 'OP' to values of type ...` on violation. `+` does JS `+` (numeric add or
   string concat). `==`/`!=` are JS `===`/`!==`. There is **no** `%` case (would throw "unknown").
+- **`return` inside a `while` or `for` does not leave the loop.** The return value is recorded but
+  the loop keeps running; the function returns only once the loop ends, possibly with a later
+  `return`'s value, or never (the 5-second cap then kills it). Probe: `while (d < 5) { d = d + 1;
+  if (d > limit) { return d; } }` with `limit = 1` returns `5`, not `2`; the same happens in a
+  `for`. A `return` inside an `if` outside any loop is fine. Exit a loop early with a flag in its
+  condition, and return after it.
 - **Functions / closures**: first-class. Calling pushes a scope, binds arguments positionally to
   parameter names, runs the body, and returns the `return` value (or `undefined` if none). Nested
   functions capture their enclosing scope. Currying works: `identity(returnSum)(1, 2)`.

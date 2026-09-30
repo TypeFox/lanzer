@@ -37,10 +37,65 @@ read the bundled reference files in `references/` for the full picture.
 9. **`+` is the only mixed operator** — allowed between `number` and/or `string` operands (string concatenation or numeric addition). `boolean`/`nil` are not allowed.
 10. **`==` / `!=` are strict.** Comparing incompatible types is allowed but produces a **warning** ("always false"/"always true"); at runtime it is JS `===`/`!==`.
 11. **Do NOT use `%` (modulo).** It is not in the grammar's `*`/`/` rule and the interpreter has no case for it — it cannot be written or will throw. There is no exponent operator either.
-12. **Classes are supported** — declaration, fields, methods, single inheritance, `this`, and `super` all validate and run. A **field** is `name: Type` (no `var`, no `;`); a **method** is `name(params): ReturnType { body }` (no `fun`; return type required, like a function). Construct with `ClassName()` (there is **no** `new`); the constructor takes **no arguments** and fields start as `nil`, so assign them after construction (`var c = Counter(); c.value = 0;`). Inherit with `class Sub < Super { ... }` (circular inheritance is rejected). A class name is a usable type, and `nil` is assignable to any class-typed target.
+12. **Classes are supported** — declaration, fields, methods, single inheritance, `this`, and `super` all validate and run. A **field** is `name: Type` (no `var`, no `;`); a **method** is `name(params): ReturnType { body }` (no `fun`; return type required, like a function). Construct with `ClassName()` (there is **no** `new`); the constructor takes **no arguments** and fields start as `nil`, so assign them after construction (`var c = Counter(); c.value = 0;`). Inherit with `class Sub < Super { ... }` (circular inheritance is rejected). A class name is a usable type, and `nil` is assignable to any class-typed target. Methods are chosen by the declared type, not the object's (see Traps).
 13. **Function/lambda types are written `(P1, P2) => R`** — e.g. `var f: (number, number) => number = add;`. Functions are first-class and can be passed, returned, and curried (`identity(add)(1, 2)`).
 14. **No standard library / built-ins.** There is no `clock()`, no string methods, no `for`-each, no arrays/lists/maps. The only output is `print`.
 15. **Comments** are `// line` and `/* block */`. Strings are double-quoted only, with no escape sequences or interpolation; a string cannot contain `"`.
+
+## Traps: valid code that does the wrong thing
+
+Each of these was checked against the interpreter. The first two pass the type checker and only go
+wrong when the program runs, so write around them from the start.
+
+1. **A `return` inside a `while` or `for` does not leave the loop.** The loop keeps running and
+   the function returns later, with a different value — or never, and the 5-second cap kills it.
+   `return` from inside an `if` outside any loop is fine. For an early exit, put a flag in the
+   loop condition and return after the loop:
+
+   ```lox
+   fun firstAbove(limit: number): number {
+       var found = -1;
+       var d = 0;
+       while ((found == -1) and (d < 5)) {
+           d = d + 1;
+           if (d > limit) { found = d; }
+       }
+       return found;
+   }
+   ```
+
+2. **Methods are chosen by the variable's declared class, not the object's.** An overriding method
+   runs only when called through a variable, parameter or field typed as the subclass. Through a
+   `Shape`-typed parameter, `shape.area()` always runs `Shape.area`, even for a `Square`. Call
+   overridden methods through the object's own class; `super.method()` works as expected.
+
+3. **Comparisons bind tighter than every other binary operator.** Precedence, loosest first:
+   `=`, then `+ -`, then `* /`, then `and or`, then `< <= > >= == !=`. So `d * d <= n` is
+   `d * (d <= n)` and `a + 1 < b` is `a + (1 < b)` — both type errors. **Parenthesise arithmetic
+   inside a comparison:** `(d * d) <= n`, `(a + 1) < b`. `a < b and b < c` needs no parentheses.
+
+4. **There is no `%`.** Build a remainder from subtraction:
+
+   ```lox
+   fun remainder(a: number, b: number): number {
+       var r = a;
+       while (r >= b) { r = r - b; }
+       return r;
+   }
+   ```
+
+5. **An empty linked structure is a class-typed `nil`.** Declare it with its type
+   (`var head: Node = nil;`), test it with `== nil` / `!= nil`, and walk it with a `while` loop.
+
+6. **There are no lambda expressions.** To return a function, declare a nested named `fun` and
+   return it by name; it captures the enclosing parameters:
+
+   ```lox
+   fun makeAdder(n: number): (number) => number {
+       fun add(x: number): number { return x + n; }
+       return add;
+   }
+   ```
 
 ## Shape at a glance
 
@@ -104,6 +159,8 @@ print c.get();        // 1
 - Using `%`, exponentiation, arrays, `clock()`, or other built-ins that don't exist.
 - A class field declared with `var` or a trailing `;` (it's `name: Type`), or a method written with `fun`; using `new` or passing constructor arguments (construct with `ClassName()`, then assign fields).
 - Escape sequences or `"` inside string literals.
+- Anything in **Traps** above: a `return` inside a loop, an override called through a superclass-typed
+  variable, or arithmetic inside a comparison without parentheses.
 
 ## References
 
