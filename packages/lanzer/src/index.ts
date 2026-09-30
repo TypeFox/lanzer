@@ -18,6 +18,7 @@ export * from './campaign/jobs.js';
 export * from './campaign/load.js';
 export * from './campaign/map.js';
 export * from './campaign/model.js';
+export * from './campaign/paths.js';
 export * from './campaign/prompt.js';
 export * from './campaign/resolve.js';
 export * from './grammar/cache.js';

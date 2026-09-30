@@ -5,6 +5,7 @@ import type {
     LanzerRequirementSpec
 } from '../campaign/model.js';
 import { renderSelector } from '../campaign/jobs.js';
+import { getCampaignFileAbsolutePath } from '../campaign/paths.js';
 import type { LanzerCampaignCheckValidationResult } from '../services/types.js';
 import { evaluateSelector } from './selector-evaluator.js';
 
@@ -104,7 +105,6 @@ function mapFileAliasesToRoots(
     issues: string[]
 ): Map<string, AstNode> {
     const roots = new Map<string, AstNode>();
-    const baseDir = resolveCampaignBaseDir(campaign);
 
     const docByPath = new Map<string, LangiumDocument>();
     for (const document of documents) {
@@ -112,7 +112,7 @@ function mapFileAliasesToRoots(
     }
 
     for (const file of campaign.files) {
-        const absolute = resolvePath(baseDir, file.path);
+        const absolute = getCampaignFileAbsolutePath(campaign, file);
         const doc = docByPath.get(normalizePath(absolute));
         if (!doc) {
             issues.push(`Generated file for '${file.alias}' was not found, or is not a document of the target language: ${absolute}`);
@@ -125,13 +125,6 @@ function mapFileAliasesToRoots(
         roots.set(file.alias, root);
     }
     return roots;
-}
-
-function resolveCampaignBaseDir(campaign: LanzerCampaignSpec): string {
-    if (campaign.workspaceRoot && campaign.baseDir) {
-        return resolvePath(campaign.baseDir, campaign.workspaceRoot);
-    }
-    return campaign.workspaceRoot ?? campaign.baseDir ?? process.cwd();
 }
 
 function normalizePath(p: string): string {
@@ -162,13 +155,3 @@ function collectFromSelector(selector: import('../campaign/model.js').LanzerSele
 
 // Re-export so the file's only public callable is the orchestration helper.
 export { evaluateSelector } from './selector-evaluator.js';
-
-/** Absolute path of a declared file — generated or support — in the campaign's workspace. */
-export function getCampaignFileAbsolutePath(campaign: LanzerCampaignSpec, file: { path: string }): string {
-    return resolvePath(resolveCampaignBaseDir(campaign), file.path);
-}
-
-/** Absolute path of the directory the campaign's files are generated into. */
-export function getCampaignWorkspaceRoot(campaign: LanzerCampaignSpec): string {
-    return resolvePath(resolveCampaignBaseDir(campaign));
-}

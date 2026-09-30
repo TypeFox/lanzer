@@ -9,7 +9,7 @@ import type {
     LanzerDocumentResult
 } from '../services/types.js';
 import { outputMatches } from './behaviour-validations.js';
-import { getCampaignFileAbsolutePath } from './requirement-validations.js';
+import { getCampaignFileAbsolutePath } from '../campaign/paths.js';
 
 /** LSP's `DiagnosticSeverity` values, by the name a campaign uses for them. */
 const LSP_SEVERITIES: Readonly<Record<number, LanzerDiagnosticSeverity | 'hint'>> = {

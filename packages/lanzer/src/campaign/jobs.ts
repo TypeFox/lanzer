@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type {
     LanzerCampaignSpec,
     LanzerCountRequirementSpec,
@@ -15,6 +14,7 @@ import type {
     LanzerSupportFileSpec,
     LanzerSymbolRequirementSpec
 } from './model.js';
+import { getCampaignFileAbsolutePath, getCampaignWorkspaceRoot } from './paths.js';
 
 export interface LanzerGenerationJob {
     id: string;
@@ -68,10 +68,10 @@ export function buildLanzerGenerationJobs(
     options: BuildLanzerGenerationJobsOptions = {}
 ): LanzerGenerationJob[] {
     const campaign = resolved.campaign;
-    const workspaceRoot = resolveWorkspaceRoot(campaign);
+    const workspaceRoot = getCampaignWorkspaceRoot(campaign);
 
     return campaign.files.map((file, jobIndex) => {
-        const absoluteOutputPath = resolvePath(file.path, workspaceRoot);
+        const absoluteOutputPath = getCampaignFileAbsolutePath(campaign, file);
         const fileRequirements = file.requirements;
         const campaignRequirements = campaign.requirements.filter((requirement) =>
             appliesToFile(requirement, file.alias, options.includeUnscopedCampaignRequirements ?? true)
@@ -88,10 +88,10 @@ export function buildLanzerGenerationJobs(
             workspaceRoot,
             outputPath: file.path,
             absoluteOutputPath,
-            supportFiles: campaign.supportFiles.map((supportFile) => mapSupportFile(supportFile, workspaceRoot)),
+            supportFiles: campaign.supportFiles.map((supportFile) => mapSupportFile(campaign, supportFile)),
             siblingGeneratedFiles: campaign.files
                 .filter((sibling) => sibling.alias !== file.alias)
-                .map((sibling) => mapSiblingFile(sibling, workspaceRoot)),
+                .map((sibling) => mapSiblingFile(campaign, sibling)),
             requirements: [...fileRequirements, ...campaignRequirements],
             fileRequirements,
             campaignRequirements,
@@ -99,11 +99,12 @@ export function buildLanzerGenerationJobs(
             grammarBaseDir: campaign.baseDir,
             runs: campaign.runs.map((run) => ({
                 ...run,
-                absoluteEntryPath: resolvePath(
-                    [...campaign.files, ...campaign.supportFiles].find((candidate) => candidate.alias === run.entryAlias)?.path
-                        ?? run.entryAlias,
-                    workspaceRoot
-                )
+                // An entry that names no declared file is reported by the behaviour check; the prompt
+                // still gets a path to show, resolved the same way.
+                absoluteEntryPath: getCampaignFileAbsolutePath(campaign, {
+                    path: [...campaign.files, ...campaign.supportFiles].find((candidate) => candidate.alias === run.entryAlias)?.path
+                        ?? run.entryAlias
+                })
             })),
             diagnostics: file.diagnostics
         };
@@ -120,34 +121,23 @@ export function findLanzerGenerationJob(
     return jobs.find((job) => job.id === selector || job.fileAlias === selector);
 }
 
-function mapSupportFile(file: LanzerSupportFileSpec, workspaceRoot: string | undefined): LanzerGenerationSupportFile {
+function mapSupportFile(campaign: LanzerCampaignSpec, file: LanzerSupportFileSpec): LanzerGenerationSupportFile {
     return {
         alias: file.alias,
         path: file.path,
-        absolutePath: resolvePath(file.path, workspaceRoot),
+        absolutePath: getCampaignFileAbsolutePath(campaign, file),
         description: file.description
     };
 }
 
-function mapSiblingFile(file: LanzerFileSpec, workspaceRoot: string | undefined): LanzerGenerationSiblingFile {
+function mapSiblingFile(campaign: LanzerCampaignSpec, file: LanzerFileSpec): LanzerGenerationSiblingFile {
     return {
         alias: file.alias,
         path: file.path,
-        absolutePath: resolvePath(file.path, workspaceRoot),
+        absolutePath: getCampaignFileAbsolutePath(campaign, file),
         rootRule: file.rootRule,
         description: file.description
     };
-}
-
-function resolveWorkspaceRoot(campaign: LanzerCampaignSpec): string | undefined {
-    if (campaign.workspaceRoot) {
-        return resolvePath(campaign.workspaceRoot, campaign.baseDir);
-    }
-    return campaign.baseDir;
-}
-
-function resolvePath(filePath: string, root: string | undefined): string {
-    return root ? path.resolve(root, filePath) : filePath;
 }
 
 function appliesToFile(
