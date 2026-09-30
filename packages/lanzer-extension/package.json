@@ -2,6 +2,7 @@
     "name": "lanzer-extension",
     "description": "VS Code extension providing language support for Lanzer (.lanzer) campaign files",
     "version": "0.0.1",
+    "license": "MIT",
     "displayName": "Lanzer",
     "type": "module",
     "engines": {

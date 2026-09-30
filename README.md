@@ -447,4 +447,6 @@ and/or a CLI ([`cli.ts`](packages/lanzer-lox/src/cli.ts)) on top of the containe
 Then any of the three tiers above drives generation with your language's conventions applied — with
 zero changes to the language itself.
 
+## License
 
+Lanzer is released under the [MIT License](LICENSE). The `langium-lox` submodule keeps its own license.
