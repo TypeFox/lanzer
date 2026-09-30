@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { EmptyFileSystem } from 'langium';
-import { runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
+import { runLanzerAgentTaskOverAcp, runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
 import { resolvePermissionPolicy } from '../src/acp/permissions.js';
 import { createLanzerServices } from '../src/lanzer-module.js';
 import { previewLanzerCampaignTask, runLanzerCampaign } from '../src/services/campaign-run.js';
@@ -371,6 +371,102 @@ describe('a support file that a run starts from', () => {
             { write: driverPath, content: 'fn main() { return; }' }
         ]]);
         expect(run.validation?.ok).toBe(false);
+        expect(run.validation?.issues).toEqual([
+            `A run starts from ${driverPath}, which the campaign provides; it must not be changed, but it was changed during this run.`
+        ]);
+    });
+});
+
+describe('a single-job run', () => {
+    /** Run one job through the single-job entry point, with the fake agent following `script`. */
+    async function runSingle(target: LanzerGenerationJob, script: Step[][], options: Partial<RunLanzerAgentTaskOptions> = {}) {
+        const scriptPath = join(dir, 'single-script.json');
+        const logPath = join(dir, 'single-agent.log');
+        await writeFile(scriptPath, JSON.stringify(script), 'utf8');
+        await writeFile(logPath, '', 'utf8');
+        return runLanzerAgentTaskOverAcp(target, {
+            command: process.execPath,
+            args: [fixture('fake-agent.mjs')],
+            env: { FAKE_AGENT_SCRIPT: scriptPath, FAKE_AGENT_LOG: logPath },
+            maxAttempts: 1,
+            validate: async () => ({ ok: true, issues: [] }),
+            ...options
+        });
+    }
+
+    test('writing its target passes', async () => {
+        const run = await runSingle(job, [[{ write: job.absoluteOutputPath, content: 'fn main() { return; }' }]]);
+        expect(run.validation).toEqual({ ok: true, issues: [] });
+    });
+
+    test('a target never written fails as missing', async () => {
+        const run = await runSingle(job, [[]]);
+        expect(run.validation).toEqual({ ok: false, issues: [`Missing required generated file: ${job.absoluteOutputPath}`] });
+    });
+
+    test('an untouched pre-existing target fails as stale', async () => {
+        await writeFile(job.absoluteOutputPath, 'fn old() { return; }', 'utf8');
+        const run = await runSingle(job, [[]]);
+        expect(run.staleFiles).toEqual([job.absoluteOutputPath]);
+        expect(run.validation?.issues).toEqual([
+            `Required generated file was not written during this run (unchanged since before it started): ${job.absoluteOutputPath}`
+        ]);
+    });
+
+    /** The target plus one file nobody declared. */
+    const withExtraFile = (): Step[][] => [[
+        { write: job.absoluteOutputPath, content: 'fn main() { return; }' },
+        { write: join(workspace, 'notes.txt'), content: 'x' }
+    ]];
+
+    test('an extra file is reported without failing the run', async () => {
+        const run = await runSingle(job, withExtraFile());
+        expect(run.extraFiles).toEqual([join(workspace, 'notes.txt')]);
+        expect(run.validation?.ok).toBe(true);
+    });
+
+    test('an extra file fails the run when the file set is strict', async () => {
+        const run = await runSingle(job, withExtraFile(), { strictFileSet: true });
+        expect(run.validation?.issues).toEqual([
+            `Unexpected generated file was written outside the declared file set: ${join(workspace, 'notes.txt')}`
+        ]);
+    });
+
+    test("the campaign's other generated files are declared, not extra", async () => {
+        const [campaign] = await loadCampaignSpecs([
+            'import "mini.langium"',
+            'campaign pair {',
+            `    workspace ${JSON.stringify(workspace)}`,
+            '    file main at "main.mini" generates Module {}',
+            '    file lib at "lib.mini" generates Module {}',
+            '}'
+        ].join('\n'));
+        const [mainJob, libJob] = buildLanzerGenerationJobs(resolveLanzerCampaign(campaign));
+        const run = await runSingle(mainJob, [[
+            { write: mainJob.absoluteOutputPath, content: 'fn main() { return; }' },
+            { write: libJob.absoluteOutputPath, content: 'fn helper() { return; }' }
+        ]]);
+        expect(run.extraFiles).toEqual([]);
+        expect(run.validation?.ok).toBe(true);
+    });
+
+    test('a support file a run starts from, rewritten by the agent, fails the run', async () => {
+        const [campaign] = await loadCampaignSpecs([
+            'import "mini.langium"',
+            'campaign driven {',
+            `    workspace ${JSON.stringify(workspace)}`,
+            '    file main at "main.mini" generates Module {}',
+            '    support driver at "driver.mini"',
+            '    run driver { expect runs }',
+            '}'
+        ].join('\n'));
+        const [drivenJob] = buildLanzerGenerationJobs(resolveLanzerCampaign(campaign));
+        const driverPath = join(workspace, 'driver.mini');
+        await writeFile(driverPath, 'fn main() { call helper; }', 'utf8');
+        const run = await runSingle(drivenJob, [[
+            { write: drivenJob.absoluteOutputPath, content: 'fn helper() { return; }' },
+            { write: driverPath, content: 'fn main() { return; }' }
+        ]]);
         expect(run.validation?.issues).toEqual([
             `A run starts from ${driverPath}, which the campaign provides; it must not be changed, but it was changed during this run.`
         ]);
