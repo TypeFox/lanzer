@@ -60,8 +60,13 @@ async function validateAction(fileName: string, options: { json?: boolean }): Pr
 /** Resolve a campaign into concrete generation jobs (mirrors `lanzer plan`). */
 async function planAction(
     fileName: string,
-    options: { json?: boolean; prompt?: boolean; job?: string }
+    options: { json?: boolean; prompt?: boolean; job?: string; skill?: string | false; policy?: string }
 ): Promise<void> {
+    if (options.policy !== undefined && options.policy !== 'full' && options.policy !== 'minimal') {
+        console.error(`--policy must be full or minimal, not "${options.policy}"`);
+        process.exitCode = 1;
+        return;
+    }
     const result = await resolveLanzerCampaignFile(fileName, { validate: true });
     if (result.issues.length > 0) {
         console.error(`Lanzer campaign is invalid: ${result.document.uri.toString()}`);
@@ -84,10 +89,14 @@ async function planAction(
     // policy and `write-lox` skill exactly as `generate` builds it.
     const prompts: { campaign: string; prompt: string }[] = [];
     if (options.prompt) {
-        const service = createLanzerLoxServices(NodeFileSystem).Lanzer.lanzer.Lanzer;
+        const service = createLanzerLoxServices(NodeFileSystem, { skillPath: options.skill || undefined }).Lanzer.lanzer.Lanzer;
+        const agent = resolveAcpOptionsFromEnv({
+            ...(options.policy === 'minimal' ? { policyMode: 'minimal' as const } : {}),
+            ...(options.skill === false ? { noSkill: true } : {})
+        });
         const wanted = new Set(selected.map((job) => job.campaignName));
         for (const campaign of result.resolvedCampaigns.filter((resolved) => wanted.has(resolved.campaign.name))) {
-            prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service, resolveAcpOptionsFromEnv())).prompt });
+            prompts.push({ campaign: campaign.campaign.name, prompt: (await previewLanzerCampaignTask(campaign, service, agent)).prompt });
         }
     }
 
@@ -143,6 +152,9 @@ export function createLoxLanzerCli(): Command {
         .option('--json', 'print generation jobs as JSON')
         .option('--prompt', 'include the agent-facing prompt preview')
         .option('--job <selector>', 'select one job by id or file alias')
+        .option('--skill <dir>', 'preview with this write-lox skill folder instead of the default one')
+        .option('--no-skill', 'preview with no DSL skill')
+        .option('--policy <mode>', 'preview with the full (default) or minimal host policy')
         .description('resolve a valid .lanzer campaign into concrete generation jobs')
         .action(planAction);
 
@@ -178,9 +190,11 @@ export function createLoxLanzerCli(): Command {
         .option('--parallel <k>', 'with --runs, run at most k at once (default 1)')
         .option('--min-pass <share>', 'the share of runs each campaign must pass for a zero exit code: k/n (e.g. 2/3) or a percentage (default: all)')
         .option('--skill <dir>', 'use this write-lox skill folder instead of the default one, e.g. to benchmark a new version of it')
+        .option('--no-skill', 'offer the agent no DSL skill, as a baseline to measure a skill against')
+        .option('--policy <mode>', "how much of the Lox host's language advice the prompt carries: full (default) or minimal (the grammar reference only)")
         .option('--isolated', "run the agent without your own setup (CLAUDE.md/AGENTS.md, settings, skills, hooks), for benchmarks (else LANZER_ACP_ISOLATED)")
         .description('run .lanzer campaigns through an agent to generate the target .lox file(s)')
-        .action(async (paths: string[], options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string; skill?: string; isolated?: boolean }) => {
+        .action(async (paths: string[], options: { command?: string; model?: string; maxAttempts?: string; allow?: string; allowAll?: boolean; report?: string | false; verbose?: boolean; quiet?: boolean; runs?: string; parallel?: string; minPass?: string; skill?: string | false; policy?: string; isolated?: boolean }) => {
             // Checked before anything runs: a typo here should not cost a batch of agent runs.
             const runs = options.runs === undefined ? 1 : Number.parseInt(options.runs, 10);
             const parallel = options.parallel === undefined ? 1 : Number.parseInt(options.parallel, 10);
@@ -199,6 +213,11 @@ export function createLoxLanzerCli(): Command {
             }
             // A skill folder without a SKILL.md is almost always a wrong path, and a benchmark of
             // it would measure the agent with no skill at all.
+            if (options.policy !== undefined && options.policy !== 'full' && options.policy !== 'minimal') {
+                console.error(`--policy must be full or minimal, not "${options.policy}"`);
+                process.exitCode = 1;
+                return;
+            }
             if (options.skill && !existsSync(resolve(options.skill, 'SKILL.md'))) {
                 console.error(`--skill ${options.skill} has no SKILL.md: pass the skill's folder`);
                 process.exitCode = 1;
@@ -234,6 +253,8 @@ export function createLoxLanzerCli(): Command {
                 ...(options.maxAttempts ? { maxAttempts: Number.parseInt(options.maxAttempts, 10) } : {}),
                 ...(permissions ? { permissions } : {}),
                 ...(options.isolated ? { isolated: true } : {}),
+                ...(options.policy === 'minimal' ? { policyMode: 'minimal' as const } : {}),
+                ...(options.skill === false ? { noSkill: true } : {}),
                 ...(options.quiet ? {} : { progress: { label: 'lox', verbose: !!options.verbose } })
             });
             // Said up front: a benchmark believed isolated but not would compare the wrong things.
@@ -251,7 +272,7 @@ export function createLoxLanzerCli(): Command {
                 console.error(`Agent permissions: ${describePermissionPolicy(acp.permissions)}`);
             }
 
-            const { runs: results } = await runLoxCampaignFiles(files, acp, { runs, parallel }, { skillPath: options.skill });
+            const { runs: results } = await runLoxCampaignFiles(files, acp, { runs, parallel }, { skillPath: options.skill || undefined });
             const reports = results.flatMap((run) => (run.report ? [run.report] : []));
 
             for (const run of results) {

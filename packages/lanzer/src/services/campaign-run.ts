@@ -57,6 +57,14 @@ export interface LanzerAcpOptions {
     permissions?: LanzerPermissionPolicy;
     /** Run without the user's own agent setup. See `RunLanzerAgentTaskOptions.isolated`. */
     isolated?: boolean;
+    /**
+     * How much of the host's generation policy the prompt carries. `full` (the default) is all of
+     * it; `minimal` keeps only the grammar reference, dropping the host's language advice so that a
+     * benchmark measures the skill rather than the advice repeating it.
+     */
+    policyMode?: LanzerPolicyMode;
+    /** Offer the agent no DSL skill, for a baseline to measure a skill against. */
+    noSkill?: boolean;
     /** Progress streaming for the run. */
     progress?: {
         label?: string;
@@ -64,6 +72,9 @@ export interface LanzerAcpOptions {
         verbose?: boolean;
     };
 }
+
+/** See {@link LanzerAcpOptions.policyMode}. */
+export type LanzerPolicyMode = 'full' | 'minimal';
 
 /**
  * Host bindings required to run a campaign: the language's {@link LanzerService} (supplies the
@@ -85,7 +96,11 @@ interface PreparedLanzerCampaign {
     dslSkill: LanzerDslSkillReference | undefined;
 }
 
-async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: LanzerService): Promise<PreparedLanzerCampaign> {
+async function prepareLanzerCampaign(
+    resolved: LanzerResolvedCampaign,
+    service: LanzerService,
+    mode: Pick<LanzerAcpOptions, 'policyMode' | 'noSkill'> = {}
+): Promise<PreparedLanzerCampaign> {
     const jobs = buildLanzerGenerationJobs(resolved);
     if (jobs.length === 0) {
         throw new Error('Campaign produced no generation jobs.');
@@ -98,10 +113,15 @@ async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: 
             `Known codes: ${knownCodes.join(', ')}.`
         );
     }
+    const policy = await service.getGenerationPolicy(jobs[0]);
     return {
         jobs,
-        policy: await service.getGenerationPolicy(jobs[0]),
-        dslSkill: await service.dslSkill(jobs[0])
+        // Minimal is what a host with no advice of its own supplies: the grammar reference alone.
+        // Filtered here rather than asked of the host, so it means the same for every host.
+        policy: mode.policyMode === 'minimal'
+            ? (policy?.grammarReferencePath ? { grammarReferencePath: policy.grammarReferencePath } : undefined)
+            : policy,
+        dslSkill: mode.noSkill ? undefined : await service.dslSkill(jobs[0])
     };
 }
 
@@ -115,9 +135,9 @@ async function prepareLanzerCampaign(resolved: LanzerResolvedCampaign, service: 
 export async function previewLanzerCampaignTask(
     resolved: LanzerResolvedCampaign,
     service: LanzerService,
-    agent?: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args'>
+    agent?: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args' | 'policyMode' | 'noSkill'>
 ): Promise<LanzerCampaignTaskPayload> {
-    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, service);
+    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, service, agent);
     const tools = !agent || lanzerTransportServesTools(agent) ? LANZER_TOOL_PROMPT_NAMES : undefined;
     return buildLanzerCampaignTask(jobs, policy, dslSkill, tools);
 }
@@ -142,13 +162,13 @@ export async function runLanzerCampaign(
     deps: RunLanzerCampaignDeps,
     acp: LanzerAcpOptions
 ): Promise<LanzerAgentRunResult> {
-    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, deps.service);
+    const { jobs, policy, dslSkill } = await prepareLanzerCampaign(resolved, deps.service, acp);
     // Taken before the agent starts: the skill and grammars are what the agent was given, and it
     // is not meant to change them. The prompt is built as `previewLanzerCampaignTask` builds it,
     // which a test holds equal to the one the run sends.
     const tools = lanzerTransportServesTools(acp) ? LANZER_TOOL_PROMPT_NAMES : undefined;
     const prompt = normalisePrompt(buildLanzerCampaignTask(jobs, policy, dslSkill, tools).prompt, getCampaignWorkspaceRoot(resolved.campaign));
-    const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill, { prompt, policy });
+    const fingerprint = await fingerprintLanzerRun(resolved.campaign, dslSkill, { prompt, policy, policyMode: acp.policyMode ?? 'full' });
 
     // The agent gets the campaign runner itself, not a copy of it. `validate` below flattens the
     // same result into the strings a fix prompt needs; the toolkit hands over the structured form.

@@ -131,7 +131,8 @@ describe('the fingerprint in the report', () => {
             grammars: [{ path: LOX_GRAMMAR, hash: expect.stringMatching(/^[0-9a-f]{64}$/) }],
             campaign: { path: join(suiteDir, 'alpha.lanzer'), hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
             promptHash: expect.stringMatching(/^[0-9a-f]{64}$/),
-            policyHash: expect.stringMatching(/^[0-9a-f]{64}$/)
+            policyHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+            policyMode: 'full'
         });
         expect(run.configuration?.agent).toEqual({ name: 'fake-agent', version: '1.2.3' });
     });
@@ -212,5 +213,55 @@ describe('compare', () => {
         await writeFile(join(dir, 'other.json'), '{}', 'utf8');
         expect(await cli('compare', join(dir, 'other.json'), join(dir, 'other.json'))).toBe(1);
         expect(vi.mocked(console.error)).toHaveBeenCalledWith(expect.stringMatching(/is not a Lanzer suite report/));
+    });
+});
+
+describe('isolating the skill: --policy minimal and --no-skill', () => {
+    /** The prompt `plan --prompt --json` previews for the alpha campaign. */
+    async function previewed(...flags: string[]): Promise<string> {
+        vi.mocked(console.log).mockClear();
+        await cli('plan', join(suiteDir, 'alpha.lanzer'), '--prompt', '--json', ...flags);
+        const plan: { prompts: { prompt: string }[] } = JSON.parse(printed());
+        return plan.prompts[0].prompt;
+    }
+
+    test('the full policy carries the Lox advice and the example; minimal keeps only the grammar reference', async () => {
+        const full = await previewed('--skill', WRITE_LOX);
+        expect(full).toContain('Required practices:');
+        expect(full).toContain('Forbidden practices:');
+        expect(full).toContain('examples.lox');
+        const minimal = await previewed('--skill', WRITE_LOX, '--policy', 'minimal');
+        expect(minimal).toContain('Read the grammar reference from this absolute path');
+        expect(minimal).not.toContain('Required practices:');
+        expect(minimal).not.toContain('Forbidden practices:');
+        expect(minimal).not.toContain('examples.lox');
+        // The skill is still offered: only the host's advice is gone.
+        expect(minimal).toContain('Use the installed agent skill named "write-lox"');
+    });
+
+    test('--no-skill leaves the skill out of the prompt', async () => {
+        const prompt = await previewed('--no-skill', '--policy', 'minimal');
+        expect(prompt).not.toContain('skill');
+        expect(prompt).toContain('Read the grammar reference from this absolute path');
+    });
+
+    test('a --policy other than full or minimal stops before any run', async () => {
+        const report = join(dir, 'report.json');
+        expect(await generate('print 1;', report, suiteDir, '--policy', 'lean')).toBe(1);
+        expect(existsSync(report)).toBe(false);
+    });
+
+    test('the modes are recorded, and compare shows them under setup', async () => {
+        const withSkill = join(dir, 'with-skill.json');
+        const bare = join(dir, 'bare.json');
+        await generate('print 1;', withSkill, join(suiteDir, 'alpha.lanzer'), '--skill', WRITE_LOX);
+        await generate('print 1;', bare, join(suiteDir, 'alpha.lanzer'), '--no-skill', '--policy', 'minimal');
+        const [run] = (await readSuite(bare)).runs;
+        expect(run.fingerprint?.policyMode).toBe('minimal');
+        expect(run.fingerprint).not.toHaveProperty('skill');
+        vi.mocked(console.log).mockClear();
+        await cli('compare', withSkill, bare);
+        expect(printed()).toMatch(/host policy: full [0-9a-f]{12} → minimal [0-9a-f]{12}/);
+        expect(printed()).toMatch(/skill: write-lox [0-9a-f]{12} → \(none\)/);
     });
 });

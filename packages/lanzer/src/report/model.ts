@@ -99,6 +99,8 @@ export interface LanzerRunFingerprint {
      * skill. Kept apart from the prompt's hash, which also moves whenever the campaign is edited.
      */
     policyHash?: string;
+    /** `minimal` when the run kept only the grammar reference of the host's policy. */
+    policyMode?: 'full' | 'minimal';
 }
 
 export interface LanzerRunReport {

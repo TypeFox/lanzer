@@ -385,6 +385,13 @@ flaky — identical runs split between pass and fail, so chance moves these pass
   gets. `--isolated` (or `LANZER_ACP_ISOLATED=1`) runs Claude without them, and `compare` shows
   when two reports differ on it. Codex has no such switch and reads `AGENTS.md` regardless, so a
   Codex run asking for it is recorded as not isolated.
+- **Measure the skill, not the prompt.** A host's generation policy can repeat what the skill says:
+  the Lox host's prompt states the typed rules and links an example file. Then even a wrong skill
+  barely moves the numbers. `--policy minimal` keeps only the grammar reference from the host's
+  policy, and `--no-skill` offers no skill at all, for a baseline. To see what a new skill adds, run
+  the suite three times under `--policy minimal --isolated` — `--no-skill`, the old skill and the
+  new one (`--skill <dir>`) — and compare each skill against the baseline, then the two skills with
+  each other. `plan --prompt` takes the same flags, to preview what each run is sent.
 - **Per run, not totals.** Cost, time, tokens, stage failures and diagnostic codes are divided by
   each side's number of runs, so a report with more runs does not look worse. The headline pass-rate
   delta counts only the campaigns both reports ran; a campaign on one side only is `added` or

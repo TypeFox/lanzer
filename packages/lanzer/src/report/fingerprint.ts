@@ -101,7 +101,7 @@ export function normalisePrompt(prompt: string, workspaceRoot: string | undefine
 export async function fingerprintLanzerRun(
     campaign: LanzerCampaignSpec,
     dslSkill: LanzerDslSkillReference | undefined,
-    given: { prompt?: string; policy?: LanzerGenerationPolicy } = {}
+    given: { prompt?: string; policy?: LanzerGenerationPolicy; policyMode?: 'full' | 'minimal' } = {}
 ): Promise<LanzerRunFingerprint> {
     const baseDir = campaign.baseDir ?? process.cwd();
     const grammars = await Promise.all(
@@ -122,6 +122,7 @@ export async function fingerprintLanzerRun(
         grammars,
         ...(campaignPath ? { campaign: { path: campaignPath, ...(campaignHash ? { hash: campaignHash } : {}) } } : {}),
         ...(given.prompt !== undefined ? { promptHash: hashText(given.prompt) } : {}),
-        ...(given.policy ? { policyHash: hashText(stableStringify(given.policy)) } : {})
+        ...(given.policy ? { policyHash: hashText(stableStringify(given.policy)) } : {}),
+        ...(given.policyMode ? { policyMode: given.policyMode } : {})
     };
 }

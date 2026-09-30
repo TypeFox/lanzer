@@ -208,7 +208,9 @@ function describeSetup(run: LanzerRunReport): Record<string, string> {
         'skill path': !fingerprint ? notRecorded : skill?.path ?? '(none)',
         grammars: fingerprint ? fingerprint.grammars.map((grammar) => `${grammar.path.split(/[\\/]/).pop()} ${shortHash(grammar.hash)}`).join(', ') : notRecorded,
         'lanzer version': fingerprint?.lanzerVersion ?? notRecorded,
-        'host policy': fingerprint?.policyHash ? shortHash(fingerprint.policyHash) : !fingerprint?.promptHash ? notRecorded : '(none)',
+        'host policy': !fingerprint?.promptHash
+            ? notRecorded
+            : `${fingerprint.policyMode ?? 'full'} ${fingerprint.policyHash ? shortHash(fingerprint.policyHash) : '(none)'}`,
         isolated: configuration?.isolated === undefined ? notRecorded : configuration.isolated ? 'yes' : 'no'
     };
 }

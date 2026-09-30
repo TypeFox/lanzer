@@ -124,7 +124,8 @@ describe('compareLanzerSuiteReports', () => {
             suite(run('stack', undefined, { fingerprint: after }))
         );
         expect(comparison.setup).toEqual([
-            { setting: 'host policy', a: ['q'.repeat(12)], b: ['s'.repeat(12)] },
+            // No mode recorded means the full policy, the only one before --policy existed.
+            { setting: 'host policy', a: [`full ${'q'.repeat(12)}`], b: [`full ${'s'.repeat(12)}`] },
             { setting: 'prompt stack', a: ['p'.repeat(12)], b: ['r'.repeat(12)] }
         ]);
     });
