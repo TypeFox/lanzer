@@ -117,12 +117,18 @@ export class LoxLanzerService extends DefaultLanzerService {
         return undefined;
     }
 
+    /** The codes {@link withLoxDiagnosticCode} assigns — Lox itself sets none. */
+    async diagnosticCodes(): Promise<readonly string[]> {
+        return LOX_DIAGNOSTIC_CODES;
+    }
+
     /**
      * Run a Lox program with the `langium-lox` interpreter, in-process, capturing what it prints.
      *
      * In-process is safe for Lox: the language has no file, network or process access, and the
      * interpreter stops a program itself after five seconds (its cancellation surfaces here as a
-     * timeout). Output is captured the way the Lox CLI prints it — each value followed by a newline —
+     * timeout). The limit is the interpreter's own, fixed in `langium-lox`, and cannot be changed
+     * from here. Output is captured the way the Lox CLI prints it — each value followed by a newline —
      * and capped, so a program printing in a loop cannot exhaust memory before it times out.
      *
      * Lox has no modules, but Langium resolves its top-level names across every file in the
@@ -131,11 +137,6 @@ export class LoxLanzerService extends DefaultLanzerService {
      * classes, top-level variables) come first, then the entry's statements. The other files'
      * remaining statements are not run; only the entry is the program.
      */
-    /** The codes {@link withLoxDiagnosticCode} assigns — Lox itself sets none. */
-    async diagnosticCodes(): Promise<readonly string[]> {
-        return LOX_DIAGNOSTIC_CODES;
-    }
-
     async execute(request: LanzerExecutionRequest): Promise<LanzerExecutionResult> {
         const startedAt = Date.now();
         const entry = request.entry.document?.parseResult.value;
