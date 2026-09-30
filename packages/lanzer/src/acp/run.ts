@@ -60,13 +60,23 @@ export async function runLanzerAgentTaskOverAcp(
     options: RunLanzerAgentTaskOptions
 ): Promise<LanzerAgentRunResult> {
     const task = buildLanzerAgentTask(job, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
+    const sessionCwd = job.workspaceRoot ?? options.cwd ?? process.cwd();
+    // The same file-set check as a campaign run, for the one target. The job's prompt lets the
+    // agent create or update the campaign's other generated files, so they are declared, not extra.
+    const checkFileSet = await watchFileSet(
+        sessionCwd,
+        [job.absoluteOutputPath],
+        [...job.supportFiles.map((file) => file.absolutePath), ...job.siblingGeneratedFiles.map((file) => file.absolutePath)],
+        supportRunEntries(job),
+        options.strictFileSet ?? false
+    );
     return executeLanzerTask(
         task,
         {
-            sessionCwd: job.workspaceRoot ?? options.cwd ?? process.cwd(),
+            sessionCwd,
             roots: {
                 writable: [
-                    job.workspaceRoot ?? options.cwd ?? process.cwd(),
+                    sessionCwd,
                     dirname(job.absoluteOutputPath),
                     ...(options.additionalDirectories ?? [])
                 ],
@@ -74,7 +84,8 @@ export async function runLanzerAgentTaskOverAcp(
             }
         },
         options,
-        (validation, attempt) => buildRetryPromptForJob(job, validation, attempt)
+        (validation, attempt) => buildRetryPromptForJob(job, validation, attempt),
+        checkFileSet
     );
 }
 
@@ -84,15 +95,13 @@ export async function runLanzerCampaignTaskOverAcp(
 ): Promise<LanzerAgentRunResult> {
     const task = buildLanzerCampaignTask(jobs, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
     const sessionCwd = jobs[0]?.workspaceRoot ?? options.cwd ?? process.cwd();
-    const expectedOutputPaths = jobs.map((job) => resolve(job.absoluteOutputPath));
-    const supportPaths = jobs[0]?.supportFiles.map((file) => resolve(file.absolutePath)) ?? [];
-    // A support file that a run starts from is the campaign's own driver — a test harness calling
-    // the generated code. The agent may manage other support files, but not this one: rewriting
-    // the harness is a way to pass the run without the code doing what it checks.
-    const runEntryPaths = (jobs[0]?.runs ?? [])
-        .filter((run) => run.entryKind === 'support')
-        .map((run) => resolve(run.absoluteEntryPath));
-    const baselineSnapshot = await captureWorkspaceSnapshot(sessionCwd, expectedOutputPaths, runEntryPaths);
+    const checkFileSet = await watchFileSet(
+        sessionCwd,
+        jobs.map((job) => job.absoluteOutputPath),
+        jobs[0]?.supportFiles.map((file) => file.absolutePath) ?? [],
+        jobs[0] ? supportRunEntries(jobs[0]) : [],
+        options.strictFileSet ?? false
+    );
     return executeLanzerTask(
         task,
         {
@@ -104,14 +113,39 @@ export async function runLanzerCampaignTaskOverAcp(
         },
         options,
         (validation, attempt) => buildRetryPromptForCampaign(jobs, validation, attempt),
-        async () => validateCampaignFileSet(
-            sessionCwd,
-            baselineSnapshot,
-            expectedOutputPaths,
-            supportPaths,
-            options.strictFileSet ?? false
-        )
+        checkFileSet
     );
+}
+
+/**
+ * Snapshot the workspace now, and return the check that compares it after each attempt.
+ *
+ * `targets` must be written during the run. `declared` are the other files the campaign declares,
+ * which are never counted as extra however they got there. `runEntries` must end the run exactly
+ * as they started it. Both entry points go through this, so a single job and a whole campaign are
+ * held to the same file-set rules.
+ */
+async function watchFileSet(
+    workspaceRoot: string,
+    targets: string[],
+    declared: string[],
+    runEntries: string[],
+    strict: boolean
+): Promise<() => Promise<LanzerFileSetResult>> {
+    const expected = targets.map((filePath) => resolve(filePath));
+    const baseline = await captureWorkspaceSnapshot(workspaceRoot, expected, runEntries.map((filePath) => resolve(filePath)));
+    return () => validateCampaignFileSet(workspaceRoot, baseline, expected, declared.map((filePath) => resolve(filePath)), strict);
+}
+
+/**
+ * The support files a job's `run` blocks start from.
+ *
+ * Such a file is the campaign's own driver — a test harness calling the generated code. The agent
+ * may manage other support files, but not this one: rewriting the harness is a way to pass the run
+ * without the code doing what it checks.
+ */
+function supportRunEntries(job: LanzerGenerationJob): string[] {
+    return job.runs.filter((run) => run.entryKind === 'support').map((run) => run.absoluteEntryPath);
 }
 
 /** Run a task over whichever transport the options select: Codex's MCP server, or ACP. */
