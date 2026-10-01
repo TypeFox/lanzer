@@ -28,6 +28,9 @@ jobs:
         with:
           node-version: 20.19.2
           cache: npm
+      # npm 10 ignores the root's langium override when checking the lockfile against the
+      # langium-lox submodule's own langium range, and rejects it; npm 11 wrote it.
+      - run: npm install -g npm@11
       - run: npm ci
       # Fails on dead links between pages.
       - run: npm run docs:build
