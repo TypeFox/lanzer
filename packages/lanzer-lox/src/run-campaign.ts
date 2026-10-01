@@ -1,31 +1,23 @@
 import { NodeFileSystem } from 'langium/node';
 import {
-    resolveLanzerCampaignFile,
-    runLanzerCampaign,
-    runLanzerCampaignRepeatedly,
+    runLanzerCampaignFiles,
     type LanzerAcpOptions,
-    type LanzerAgentRunResult,
-    type LanzerRepeatedRunsResult,
     type LanzerRepeatOptions,
-    type LanzerResolvedCampaign,
-    type RunLanzerCampaignDeps
+    type RunLanzerCampaignDeps,
+    type RunLanzerCampaignFilesResult
 } from 'lanzer';
 import { createLanzerLoxServices } from './lox-host.js';
 import type { LoxLanzerOptions } from './lox-lanzer-service.js';
 
-export interface RunLoxCampaignResult {
-    /** Every run, in order: one per campaign, or `repeat.runs` per campaign when repeating. */
-    runs: LanzerAgentRunResult[];
-    /** With repeated runs, each campaign's batch and its pass count. */
-    batches?: LanzerRepeatedRunsResult[];
-}
+/** Every run, and with repeated runs each campaign's batch. See {@link runLanzerCampaignFiles}. */
+export type RunLoxCampaignResult = RunLanzerCampaignFilesResult;
 
 /**
  * Lox services for one run. Fresh every time: Langium resolves names across every document it has
  * loaded, so two runs, or two campaigns, sharing services could pass on a name only the other
  * defined.
  */
-function createLoxDeps(options: LoxLanzerOptions = {}): RunLanzerCampaignDeps {
+export function createLoxDeps(options: LoxLanzerOptions = {}): RunLanzerCampaignDeps {
     const { Lanzer } = createLanzerLoxServices(NodeFileSystem, options);
     return { service: Lanzer.lanzer.Lanzer, runner: Lanzer.lanzer.CampaignRunner };
 }
@@ -56,10 +48,7 @@ export async function runLoxCampaignFile(
 
 /**
  * {@link runLoxCampaignFile} over several campaign files, as one suite: every campaign of every
- * file, in file order.
- *
- * Every file is resolved before the first run starts, so a typo in the last file of a suite fails
- * at once rather than after the agent runs for the others. It throws with every file's issues.
+ * file, in file order, each run with fresh Lox services. See {@link runLanzerCampaignFiles}.
  */
 export async function runLoxCampaignFiles(
     campaignFiles: string[],
@@ -67,32 +56,5 @@ export async function runLoxCampaignFiles(
     repeat?: LanzerRepeatOptions,
     options: LoxLanzerOptions = {}
 ): Promise<RunLoxCampaignResult> {
-    const campaigns: LanzerResolvedCampaign[] = [];
-    const problems: string[] = [];
-    for (const file of campaignFiles) {
-        const resolved = await resolveLanzerCampaignFile(file, { validate: true });
-        if (resolved.issues.length > 0) {
-            const prefix = campaignFiles.length > 1 ? `${file}: ` : '';
-            problems.push(...resolved.issues.map((issue) => `${prefix}[${issue.kind}] ${issue.message}`));
-        }
-        campaigns.push(...resolved.resolvedCampaigns);
-    }
-    if (problems.length > 0) {
-        throw new Error(`Campaign file is invalid:\n${problems.join('\n')}`);
-    }
-
-    const createDeps = () => createLoxDeps(options);
-    if (repeat && repeat.runs > 1) {
-        const batches: LanzerRepeatedRunsResult[] = [];
-        for (const campaign of campaigns) {
-            batches.push(await runLanzerCampaignRepeatedly(campaign, createDeps, acp, repeat));
-        }
-        return { runs: batches.flatMap((batch) => batch.runs.map((run) => run.result)), batches };
-    }
-
-    const runs: LanzerAgentRunResult[] = [];
-    for (const campaign of campaigns) {
-        runs.push(await runLanzerCampaign(campaign, createDeps(), acp));
-    }
-    return { runs };
+    return runLanzerCampaignFiles(campaignFiles, acp, () => createLoxDeps(options), repeat);
 }

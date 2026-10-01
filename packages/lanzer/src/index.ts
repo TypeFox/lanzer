@@ -6,6 +6,7 @@ export * from './report/build.js';
 export * from './report/compare.js';
 export * from './report/fingerprint.js';
 export * from './report/render.js';
+export * from './cli/host-cli.js';
 export * from './acp/run.js';
 export * from './generated/ast.js';
 export {
