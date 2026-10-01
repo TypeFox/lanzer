@@ -3,12 +3,15 @@ import lanzer from '../../packages/lanzer/syntaxes/lanzer.tmLanguage.json' with 
 import lox from '../../packages/langium-lox/vscode/syntaxes/lox.tmLanguage.json' with { type: 'json' };
 
 const repo = 'https://github.com/TypeFox/lanzer';
+// GitHub Pages serves the site under the repository's name.
+const base = '/lanzer/';
 
 export default defineConfig({
     title: 'Lanzer',
     description: 'Measure how well coding agents write your Langium DSL',
+    base,
     cleanUrls: true,
-    head: [['link', { rel: 'icon', href: '/lanzer.webp' }]],
+    head: [['link', { rel: 'icon', href: `${base}lanzer.webp` }]],
     markdown: {
         // The real Lanzer and Lox grammars, so ```lanzer and ```lox blocks are highlighted.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
