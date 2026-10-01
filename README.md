@@ -167,6 +167,40 @@ node ./bin/lox-lanzer.js plan     ./examples/hello.lanzer
 node --env-file=.env ./bin/lox-lanzer.js generate  ./examples/hello.lanzer
 ```
 
+#### Agent configuration
+
+`.env.copy` lists every `LANZER_ACP_*` variable with example values. What each one means:
+
+- **`LANZER_ACP_COMMAND` / `LANZER_ACP_ARGS`** start any agent that speaks ACP: `claude-agent-acp`
+  for Claude, `@agentclientprotocol/codex-acp` for Codex (signed in with `npx -y @openai/codex login`,
+  or `OPENAI_API_KEY` set), `gemini --acp` for Gemini. `npx` resolves the agent from
+  `node_modules` whatever the working directory.
+- **`LANZER_ACP_PROVIDER`** only matters for Codex: `codex` or `openai`. Any other value, `claude`
+  included, is ignored, and an empty value counts as unset. With `codex` and no command set,
+  Lanzer starts `npx -y @agentclientprotocol/codex-acp`. With `codex` and a command that is not
+  codex-acp, it uses its older Codex MCP transport, which needs `codex mcp-server`: Codex 0.155 and
+  later no longer have it.
+- **`LANZER_ACP_MODEL`** is the agent's own alias, not an API model id: `claude-sonnet-4-6` is
+  rejected when the session is set up, and fails the run before any prompt. `claude-agent-acp`
+  offers `default`, `opus[1m]`, `claude-fable-5-1[1m]`, `sonnet` and `haiku`; Codex offers ids
+  such as `gpt-5.5` and `gpt-6.1-sol`. The list depends on the agent and your account. An unknown
+  value is reported and skipped, and the run continues on the agent's default.
+- **`LANZER_ACP_EFFORT`**: `claude-agent-acp` offers `default`, `low`, `medium`, `high`, `xhigh`
+  and `max`; Codex offers `low`, `medium`, `high` and `xhigh`.
+- **`LANZER_ACP_MAX_ATTEMPTS`**: prompts per generation session, the first one and its fix
+  prompts, before giving up (default 2).
+- **`LANZER_ACP_ALLOW`**: the ACP tool kinds the agent may use, comma-separated, from `read`,
+  `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `switch_mode` and `other`, or
+  `all`. Unset, it is `read,edit,search,think,other`. See the next section.
+- **`LANZER_ACP_ISOLATED`** (`1`/`true`, or `--isolated`): runs Claude without your own setup
+  (CLAUDE.md, settings, skills, hooks, auto-memory), for benchmarks. Codex reads `AGENTS.md`
+  regardless, so a Codex run is recorded as not isolated.
+
+Codex through codex-acp gets Lanzer's tools and real sessions, like Claude, with two limits.
+Its token counts are the last model request's, not the turn's (codex-acp 2.1.0). And whether
+Codex asks before running a shell command, so that leaving `execute` out is enforced, is not
+verified yet.
+
 #### Agent Permissions & Security
 
 In doubt, use dev-containers or agent isolation mechanisms, this is even more critical, if you generate
