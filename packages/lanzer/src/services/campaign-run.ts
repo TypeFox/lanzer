@@ -14,6 +14,7 @@ import {
     type LanzerPermissionPolicy
 } from '../acp/permissions.js';
 import { formatLanzerIssue } from '../acp/issues.js';
+import { isCodexProvider } from '../acp/transport-codex.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
 import { fingerprintLanzerRun, normalisePrompt } from '../report/fingerprint.js';
@@ -321,8 +322,9 @@ export async function runLanzerCampaign(
  * Resolve {@link LanzerAcpOptions} from the conventional `LANZER_ACP_*` environment variables,
  * applying `overrides` on top. This defines the env contract once so every CLI shares it:
  *
- * - `LANZER_ACP_COMMAND` (default `claude-agent-acp`)
- * - `LANZER_ACP_ARGS` (JSON array string, e.g. `'["-y","@zed-industries/codex-acp"]'`)
+ * - `LANZER_ACP_COMMAND` (default `claude-agent-acp`; with a Codex provider, `npx`)
+ * - `LANZER_ACP_ARGS` (JSON array string, e.g. `'["-y","@agentclientprotocol/codex-acp"]'`; with
+ *   a Codex provider and no command, that adapter)
  * - `LANZER_ACP_PROVIDER`, `LANZER_ACP_MODEL`, `LANZER_ACP_EFFORT`
  * - `LANZER_ACP_MAX_ATTEMPTS` (integer, default 2)
  * - `LANZER_ACP_ALLOW` (comma-separated ACP tool kinds, or `all`)
@@ -348,9 +350,11 @@ export function resolveAcpOptionsFromEnv(overrides: Partial<LanzerAcpOptions> = 
     const maxAttemptsRaw = env.LANZER_ACP_MAX_ATTEMPTS;
     const maxAttempts = maxAttemptsRaw ? Number.parseInt(maxAttemptsRaw, 10) : undefined;
 
+    // A Codex provider with no command means Codex's ACP adapter, not Claude's.
+    const codexDefault = !env.LANZER_ACP_COMMAND && isCodexProvider(env.LANZER_ACP_PROVIDER);
     return {
-        command: env.LANZER_ACP_COMMAND ?? 'claude-agent-acp',
-        args,
+        command: env.LANZER_ACP_COMMAND ?? (codexDefault ? 'npx' : 'claude-agent-acp'),
+        args: args ?? (codexDefault ? ['-y', '@agentclientprotocol/codex-acp'] : undefined),
         provider: env.LANZER_ACP_PROVIDER,
         model: env.LANZER_ACP_MODEL,
         effort: env.LANZER_ACP_EFFORT,

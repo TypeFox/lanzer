@@ -204,7 +204,7 @@ function codexTokenTotals(msg: object): LanzerAgentUsage | undefined {
     };
 }
 
-function isCodexProvider(provider: string | undefined): boolean {
+export function isCodexProvider(provider: string | undefined): boolean {
     const normalized = provider?.trim().toLowerCase();
     return normalized === 'codex' || normalized === 'openai';
 }
