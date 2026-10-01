@@ -44,6 +44,9 @@ export default defineConfig({
         search: { provider: 'local' },
         socialLinks: [{ icon: 'github', link: repo }],
         editLink: { pattern: `${repo}/edit/main/docs/:path` },
-        footer: { message: 'Released under the MIT License.' }
+        footer: {
+            message: 'Released under the MIT License.',
+            copyright: 'Made with ♥ by <a href="https://www.typefox.io/">TypeFox GmbH</a>'
+        }
     }
 });
