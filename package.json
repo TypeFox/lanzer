@@ -13,7 +13,9 @@
         "build:clean": "npm run clean && npm run build",
         "langium:generate": "npm run --workspace packages/lanzer langium:generate",
         "langium:watch": "npm run --workspace packages/lanzer langium:watch",
-        "test": "npm run build && npm run test --workspaces --if-present"
+        "test": "npm run build && npm run test --workspaces --if-present",
+        "docs:dev": "vitepress dev docs",
+        "docs:build": "vitepress build docs"
     },
     "devDependencies": {
         "@types/node": "~20.17.48",
@@ -21,7 +23,8 @@
         "typescript": "~5.8.3",
         "@typescript-eslint/eslint-plugin": "^8.48.0",
         "@typescript-eslint/parser": "^8.48.0",
-        "eslint": "^9.39.1"
+        "eslint": "^9.39.1",
+        "vitepress": "^1.6.4"
     },
     "overrides": {
         "langium": "~4.4.0",

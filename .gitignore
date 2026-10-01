@@ -6,6 +6,7 @@ out/
 lib/
 dist/
 *.tsbuildinfo
+docs/.vitepress/cache/
 
 # Langium-generated sources
 packages/lanzer/src/generated/
