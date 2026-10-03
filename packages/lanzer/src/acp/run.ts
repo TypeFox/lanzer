@@ -3,16 +3,13 @@ import type { LanzerGenerationJob } from '../campaign/jobs.js';
 import {
     buildLanzerAgentTask,
     buildLanzerCampaignTask,
-    type LanzerPromptToolNames,
-    type LanzerTaskPayload
+    type LanzerPromptToolNames
 } from '../campaign/prompt.js';
 import { buildRetryPromptForCampaign, buildRetryPromptForJob } from './attempts.js';
-import type { FileAccessRoots, RecordingClient } from './client.js';
 import { captureWorkspaceSnapshot, validateCampaignFileSet, type LanzerFileSetResult } from './file-set.js';
 import type { LanzerToolkit } from './tool-host.js';
 import { executeLanzerTaskOverAcp } from './transport-acp.js';
-import { executeLanzerTaskOverCodex, shouldUseCodexMcpTransport } from './transport-codex.js';
-import type { LanzerAgentRunResult, LanzerAgentValidationResult, RunLanzerAgentTaskOptions } from './types.js';
+import type { LanzerAgentRunResult, RunLanzerAgentTaskOptions } from './types.js';
 
 // The public surface of running an agent, as it was when all of it lived in this file.
 export * from './types.js';
@@ -34,21 +31,6 @@ function promptToolNames(toolkit: LanzerToolkit | undefined): LanzerPromptToolNa
     };
 }
 
-/** The toolkit a run actually serves: none over a transport that cannot carry Lanzer's tools. */
-function servedToolkit(options: RunLanzerAgentTaskOptions): LanzerToolkit | undefined {
-    return lanzerTransportServesTools(options) ? options.toolkit : undefined;
-}
-
-/**
- * Whether the agent these settings select can be offered Lanzer's tools.
- *
- * ACP sessions take MCP servers; the Codex MCP transport has no way to hand it one. A prompt that
- * names tools the agent cannot reach costs a turn discovering they are not there.
- */
-export function lanzerTransportServesTools(agent: Pick<RunLanzerAgentTaskOptions, 'provider' | 'command' | 'args'>): boolean {
-    return !shouldUseCodexMcpTransport(agent);
-}
-
 /** Every Lanzer tool by the name the agent sees, as `mcp__lanzer__<tool>`. */
 export const LANZER_TOOL_PROMPT_NAMES = {
     validate: 'mcp__lanzer__validate',
@@ -59,7 +41,7 @@ export async function runLanzerAgentTaskOverAcp(
     job: LanzerGenerationJob,
     options: RunLanzerAgentTaskOptions
 ): Promise<LanzerAgentRunResult> {
-    const task = buildLanzerAgentTask(job, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
+    const task = buildLanzerAgentTask(job, options.policy, options.dslSkill, promptToolNames(options.toolkit));
     const sessionCwd = job.workspaceRoot ?? options.cwd ?? process.cwd();
     // The same file-set check as a campaign run, for the one target. The job's prompt lets the
     // agent create or update the campaign's other generated files, so they are declared, not extra.
@@ -70,7 +52,7 @@ export async function runLanzerAgentTaskOverAcp(
         supportRunEntries(job),
         options.strictFileSet ?? false
     );
-    return executeLanzerTask(
+    return executeLanzerTaskOverAcp(
         task,
         {
             sessionCwd,
@@ -93,7 +75,7 @@ export async function runLanzerCampaignTaskOverAcp(
     jobs: LanzerGenerationJob[],
     options: RunLanzerAgentTaskOptions
 ): Promise<LanzerAgentRunResult> {
-    const task = buildLanzerCampaignTask(jobs, options.policy, options.dslSkill, promptToolNames(servedToolkit(options)));
+    const task = buildLanzerCampaignTask(jobs, options.policy, options.dslSkill, promptToolNames(options.toolkit));
     const sessionCwd = jobs[0]?.workspaceRoot ?? options.cwd ?? process.cwd();
     const checkFileSet = await watchFileSet(
         sessionCwd,
@@ -102,7 +84,7 @@ export async function runLanzerCampaignTaskOverAcp(
         jobs[0] ? supportRunEntries(jobs[0]) : [],
         options.strictFileSet ?? false
     );
-    return executeLanzerTask(
+    return executeLanzerTaskOverAcp(
         task,
         {
             sessionCwd,
@@ -148,15 +130,3 @@ function supportRunEntries(job: LanzerGenerationJob): string[] {
     return job.runs.filter((run) => run.entryKind === 'support').map((run) => run.absoluteEntryPath);
 }
 
-/** Run a task over whichever transport the options select: Codex's MCP server, or ACP. */
-async function executeLanzerTask(
-    task: LanzerTaskPayload,
-    context: { sessionCwd: string; roots: FileAccessRoots },
-    options: RunLanzerAgentTaskOptions,
-    buildRetryPrompt: (validation: LanzerAgentValidationResult | undefined, attempt: number) => string,
-    extraValidate?: (client: RecordingClient) => Promise<LanzerFileSetResult>
-): Promise<LanzerAgentRunResult> {
-    return shouldUseCodexMcpTransport(options)
-        ? executeLanzerTaskOverCodex(task, context, options, buildRetryPrompt, extraValidate)
-        : executeLanzerTaskOverAcp(task, context, options, buildRetryPrompt, extraValidate);
-}

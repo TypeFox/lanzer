@@ -1,7 +1,6 @@
 import {
     LANZER_TOOL_PROMPT_NAMES,
     LanzerRunStageError,
-    lanzerTransportServesTools,
     runLanzerCampaignTaskOverAcp,
     type LanzerAgentRunResult,
     type RunLanzerAgentTaskOptions
@@ -14,7 +13,7 @@ import {
     type LanzerPermissionPolicy
 } from '../acp/permissions.js';
 import { formatLanzerIssue } from '../acp/issues.js';
-import { isCodexProvider } from '../acp/transport-codex.js';
+import { isCodexProvider } from '../acp/codex.js';
 import type { LanzerToolkit } from '../acp/tool-host.js';
 import { buildLanzerRunReport } from '../report/build.js';
 import { fingerprintLanzerRun, normalisePrompt } from '../report/fingerprint.js';
@@ -82,9 +81,9 @@ export interface LanzerAcpOptions {
 /** See {@link LanzerAcpOptions.policyMode}. */
 export type LanzerPolicyMode = 'full' | 'minimal';
 
-/** Whether a run offers Lanzer's tools: the transport must carry them, and the run must want them. */
-function servesTools(agent: Pick<LanzerAcpOptions, 'provider' | 'command' | 'args' | 'noTools'>): boolean {
-    return !agent.noTools && lanzerTransportServesTools(agent);
+/** Whether a run offers Lanzer's tools: every run does, unless it opted out. */
+function servesTools(agent: Pick<LanzerAcpOptions, 'noTools'>): boolean {
+    return !agent.noTools;
 }
 
 /**
@@ -246,7 +245,7 @@ export async function runLanzerCampaign(
         permissions: acp.permissions,
         isolated: acp.isolated,
         readOnlyDirectories,
-        // Without it the run takes the path a Codex run takes: no tool server, no tools in the prompt.
+        // Without it the run serves no tool server, and its prompt names no tools.
         ...(acp.noTools ? {} : { toolkit }),
         policy,
         dslSkill,
@@ -267,7 +266,7 @@ export async function runLanzerCampaign(
         const failed: LanzerAgentRunResult = {
             task: buildLanzerCampaignTask(jobs, policy, dslSkill),
             // Only what the options decide: the agent was never reached to say more.
-            configuration: describeRunConfiguration(runOptions, lanzerTransportServesTools(runOptions) ? 'acp' : 'codex-mcp'),
+            configuration: describeRunConfiguration(runOptions),
             sessionId: '',
             attempts: 0,
             stopReason: 'error',

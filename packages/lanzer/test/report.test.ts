@@ -147,7 +147,7 @@ describe('the run configuration', () => {
         );
     });
 
-    test('names the command when the agent did not say who it is, and the sandbox for Codex', async () => {
+    test('names the command when the agent did not say who it is, and the sandbox in an old Codex MCP report', async () => {
         const codex: LanzerRunConfiguration = {
             transport: 'codex-mcp', command: 'npx', args: ['-y', '@openai/codex', 'mcp-server'],
             permissionMode: 'workspace-write', allowedToolKinds: ['edit', 'read'], fixIterations: 2, retryIterations: 1

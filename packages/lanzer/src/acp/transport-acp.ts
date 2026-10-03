@@ -66,7 +66,7 @@ export async function executeLanzerTaskOverAcp(
         // Raced against the launch failure: a command that does not exist never answers
         // `initialize`, so without this the run would wait on a handshake that cannot arrive.
         return await Promise.race([launch, buildClientApp(client).connectWith(stream, async (agent) => {
-            const configuration: LanzerRunConfiguration = describeRunConfiguration(options, 'acp');
+            const configuration: LanzerRunConfiguration = describeRunConfiguration(options);
             const initialized = await atStage(stage, 'session', () => agent.request(acp.AGENT_METHODS.initialize, {
                 protocolVersion: acp.PROTOCOL_VERSION,
                 clientInfo: {

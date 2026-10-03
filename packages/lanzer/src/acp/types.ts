@@ -145,7 +145,10 @@ export interface RunLanzerAgentTaskOptions {
  * under one model and failing under another is only visible when the report says which was which.
  */
 export interface LanzerRunConfiguration {
-    /** How Lanzer talked to the agent: ACP, or Codex's MCP server. */
+    /**
+     * How Lanzer talked to the agent: always ACP now. `codex-mcp` appears only in reports from
+     * before Lanzer dropped its Codex MCP transport.
+     */
     transport: 'acp' | 'codex-mcp';
     command: string;
     args: string[];
@@ -155,8 +158,8 @@ export interface LanzerRunConfiguration {
     effort?: string;
     /**
      * The permission mode the session ran in: the one Lanzer set (the agent accepted the request),
-     * or the one it opened in when that was already right. For Codex, the sandbox it was started
-     * in. Absent when the agent offers no modes.
+     * or the one it opened in when that was already right. In an old `codex-mcp` report, the
+     * sandbox Codex was started in. Absent when the agent offers no modes.
      */
     permissionMode?: string;
     /** The ACP tool kinds the policy allowed. */
@@ -167,12 +170,13 @@ export interface LanzerRunConfiguration {
     retryIterations: number;
     /**
      * Whether the agent ran without the user's own setup. False when it was not asked for, and when
-     * it was but the transport cannot do it (Codex). Absent in reports from before it existed.
+     * it was but the agent cannot do it (Codex reads `AGENTS.md` regardless). Absent in reports from
+     * before it existed.
      */
     isolated?: boolean;
     /**
-     * Whether the agent was offered Lanzer's tools (`validate`, `grammar_reference`). Never over
-     * Codex's transport, and not when the run opted out. Absent in reports from before it existed.
+     * Whether the agent was offered Lanzer's tools (`validate`, `grammar_reference`). Not when the
+     * run opted out, nor in old `codex-mcp` reports. Absent in reports from before it existed.
      */
     lanzerTools?: boolean;
     /**

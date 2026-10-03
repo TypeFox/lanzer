@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { describePermissionPolicy, permissiveLanzerPolicy, resolvePermissionPolicy } from '../acp/permissions.js';
-import { lanzerTransportServesTools } from '../acp/run.js';
+import { isCodexAgent } from '../acp/codex.js';
 import { buildLanzerGenerationJobs, findLanzerGenerationJob } from '../campaign/jobs.js';
 import { loadLanzerDocumentFromFile } from '../campaign/load.js';
 import { resolveLanzerCampaignFile } from '../campaign/resolve.js';
@@ -273,7 +273,7 @@ export function createLanzerHostCli(host: LanzerHostCliOptions): Command {
                 ...(options.quiet ? {} : { progress: { label: host.label, verbose: !!options.verbose } })
             });
             // Said up front: a benchmark believed isolated but not would compare the wrong things.
-            if (acp.isolated && !lanzerTransportServesTools(acp)) {
+            if (acp.isolated && isCodexAgent(acp)) {
                 console.error('--isolated has no effect with Codex, which reads AGENTS.md regardless; the report records the run as not isolated.');
             }
 

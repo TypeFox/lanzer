@@ -32,6 +32,7 @@ function describeConfiguration(configuration: LanzerRunConfiguration): string {
     const bits = [`agent: ${agent}`];
     if (configuration.model) bits.push(`model ${configuration.model}`);
     if (configuration.effort) bits.push(`effort ${configuration.effort}`);
+    // An old report from Lanzer's Codex MCP transport recorded Codex's sandbox, not a mode.
     const mode = configuration.transport === 'codex-mcp' ? 'sandbox' : 'mode';
     bits.push(`${mode} ${configuration.permissionMode ?? '(none)'}`);
     return bits.join(', ');

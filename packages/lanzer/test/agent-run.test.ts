@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { EmptyFileSystem } from 'langium';
 import { runLanzerAgentTaskOverAcp, runLanzerCampaignTaskOverAcp, type RunLanzerAgentTaskOptions } from '../src/acp/run.js';
+import { describeRunConfiguration } from '../src/acp/configuration.js';
 import { resolvePermissionPolicy } from '../src/acp/permissions.js';
 import { LANZER_EVALUATION_MODE_PROMPT } from '../src/acp/evaluation.js';
 import { createLanzerServices } from '../src/lanzer-module.js';
-import { previewLanzerCampaignTask, runLanzerCampaign } from '../src/services/campaign-run.js';
+import { previewLanzerCampaignTask, resolveAcpOptionsFromEnv, runLanzerCampaign } from '../src/services/campaign-run.js';
 import { DefaultLanzerService } from '../src/services/default-services.js';
 import type { LanzerDslSkillReference, LanzerGenerationPolicy } from '../src/services/types.js';
 import type { LanzerResolvedCampaign } from '../src/campaign/model.js';
@@ -398,69 +399,35 @@ describe('mid-run validate failures', () => {
     });
 });
 
-describe('the Codex MCP transport', () => {
-    /** Run the fake Codex server, one script entry per call; return the prompts it received. */
-    async function runFakeCodex(
-        script: { path: string; content?: string }[][],
-        validate: RunLanzerAgentTaskOptions['validate'],
-        options: Partial<RunLanzerAgentTaskOptions> = {}
-    ) {
-        const scriptPath = join(dir, 'codex-script.json');
-        const logPath = join(dir, 'codex.log');
-        await writeFile(scriptPath, JSON.stringify(script), 'utf8');
-        await writeFile(logPath, '', 'utf8');
-        const run = await runLanzerCampaignTaskOverAcp([job], {
-            provider: 'codex',
-            command: process.execPath,
-            args: [fixture('fake-codex.mjs')],
-            env: { FAKE_CODEX_SCRIPT: scriptPath, FAKE_CODEX_LOG: logPath },
-            validate,
-            toolkit: { validate: async () => ({ ok: true, documents: [] }) },
-            ...options
-        });
-        const prompts = (await readFile(logPath, 'utf8')).split('\n').filter(Boolean).map((line) => {
-            const entry: unknown = JSON.parse(line);
-            return isRecord(entry) && typeof entry.prompt === 'string' ? entry.prompt : '';
-        });
-        return { run, prompts };
-    }
-
-    test('records a run that asked for isolation as not isolated: Codex has no such switch', async () => {
-        const { run } = await runFakeCodex([[{ path: job.absoluteOutputPath, content: 'fn main() { return; }' }]], async () => ({ ok: true, issues: [] }), { isolated: true });
-        expect(run.configuration?.transport).toBe('codex-mcp');
-        expect(run.configuration?.isolated).toBe(false);
-    });
-
-    test('runs the same attempt loop: log, file set, token totals, and a fix prompt that carries the task', async () => {
-        let validations = 0;
-        const { run, prompts } = await runFakeCodex(
-            [[], [{ path: job.absoluteOutputPath, content: 'fn main() { return; }' }, { path: join(workspace, 'notes.txt'), content: 'extra' }]],
-            async () => (++validations === 1 ? { ok: false, issues: ['[diagnostic] Missing main'] } : { ok: true, issues: [] }),
-            { fixIterations: 2, retryIterations: 1 }
-        );
-
-        expect(run.validation?.ok).toBe(true);
-        expect(run.attemptLog.map((attempt) => [attempt.kind, attempt.session, attempt.issueCount])).toEqual([['initial', 1, 2], ['fix', 1, 0]]);
-        expect(run.extraFiles).toEqual([join(workspace, 'notes.txt')]);
-        expect(run.usage).toMatchObject({ totalTokens: 220, inputTokens: 200, outputTokens: 20 });
-        // Every Codex call is a fresh conversation, so the fix pass restates the task.
-        expect(prompts).toHaveLength(2);
-        expect(prompts[1].startsWith(run.task.prompt)).toBe(true);
-        expect(prompts[1]).toContain('Fix pass 1');
-    });
-
-    test('does not offer Lanzer tools it cannot serve', async () => {
-        const { run } = await runFakeCodex([[{ path: job.absoluteOutputPath, content: 'x' }]], async () => ({ ok: true, issues: [] }));
-        expect(run.task.prompt).not.toContain('mcp__lanzer__');
-    });
-
+describe('the attempt loop', () => {
     test('abandons fix passes that stop changing the findings', async () => {
-        const { run } = await runFakeCodex(
-            [[{ path: job.absoluteOutputPath, content: 'x' }]],
-            async () => ({ ok: false, issues: ['[diagnostic] the same thing'] }),
-            { fixIterations: 6, retryIterations: 1 }
+        const { run } = await runFakeAgent(
+            [[{ write: job.absoluteOutputPath, content: 'x' }]],
+            { validate: async () => ({ ok: false, issues: ['[diagnostic] the same thing'] }), fixIterations: 6, retryIterations: 1 }
         );
         expect(run.attemptLog.map((attempt) => attempt.kind)).toEqual(['initial', 'fix', 'fix']);
+    });
+});
+
+describe('Codex over ACP', () => {
+    test('a Codex provider with no command starts codex-acp', () => {
+        const saved = { ...process.env };
+        try {
+            delete process.env.LANZER_ACP_COMMAND;
+            delete process.env.LANZER_ACP_ARGS;
+            process.env.LANZER_ACP_PROVIDER = 'codex';
+            const options = resolveAcpOptionsFromEnv();
+            expect([options.command, ...(options.args ?? [])]).toEqual(['npx', '-y', '@agentclientprotocol/codex-acp']);
+        } finally {
+            process.env = saved;
+        }
+    });
+
+    test('records a Codex run that asked for isolation as not isolated: Codex reads AGENTS.md regardless', () => {
+        const codex = describeRunConfiguration({ command: 'npx', args: ['-y', '@agentclientprotocol/codex-acp'], isolated: true });
+        expect(codex.isolated).toBe(false);
+        expect(codex.evaluationPromptHash).toBeUndefined();
+        expect(describeRunConfiguration({ command: 'claude-agent-acp', isolated: true }).isolated).toBe(true);
     });
 });
 

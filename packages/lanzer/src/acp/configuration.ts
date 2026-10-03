@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { resolveAttemptBudget } from './attempts.js';
+import { isCodexAgent } from './codex.js';
 import { LANZER_EVALUATION_MODE_PROMPT } from './evaluation.js';
 import { allowedClaudeTools, resolvePermissionPolicy } from './permissions.js';
 import type { LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.js';
@@ -10,15 +11,14 @@ import type { LanzerRunConfiguration, RunLanzerAgentTaskOptions } from './types.
  * The transports add what only the live agent can say — its name and version, and the permission
  * mode it actually ran in. A run that fails before reaching the agent is still described by this.
  */
-export function describeRunConfiguration(
-    options: RunLanzerAgentTaskOptions,
-    transport: LanzerRunConfiguration['transport']
-): LanzerRunConfiguration {
+export function describeRunConfiguration(options: RunLanzerAgentTaskOptions): LanzerRunConfiguration {
     const permissions = options.permissions ?? resolvePermissionPolicy(undefined);
-    const tools = transport === 'acp' ? allowedClaudeTools(permissions) : undefined;
+    const tools = allowedClaudeTools(permissions);
+    // Codex reads AGENTS.md whatever Lanzer asks, so a Codex run is honestly not isolated.
+    const isolated = options.isolated === true && !isCodexAgent(options);
     const { fixIterations, retryIterations } = resolveAttemptBudget(options);
     return {
-        transport,
+        transport: 'acp',
         command: options.command,
         args: options.args ?? [],
         ...(options.model ? { model: options.model } : {}),
@@ -27,10 +27,9 @@ export function describeRunConfiguration(
         ...(tools ? { toolAllowlist: tools } : {}),
         fixIterations,
         retryIterations,
-        // Only Claude's adapter takes the setting; asked of Codex, the run is honestly not isolated.
-        isolated: transport === 'acp' && options.isolated === true,
-        lanzerTools: transport === 'acp' && options.toolkit !== undefined,
-        ...(transport === 'acp' && options.isolated
+        isolated,
+        lanzerTools: options.toolkit !== undefined,
+        ...(isolated
             ? { evaluationPromptHash: createHash('sha256').update(LANZER_EVALUATION_MODE_PROMPT).digest('hex') }
             : {})
     };
