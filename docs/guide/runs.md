@@ -3,7 +3,7 @@
 One pass says little about an agent that gets it right two times in three. `--runs` repeats each campaign with the identical prompt and reports the pass rate:
 
 ```shell
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/fizzbuzz.lanzer --runs 5 --parallel 2
+npx lox-lanzer generate ./examples/fizzbuzz.lanzer --runs 5 --parallel 2
 ```
 
 ```text

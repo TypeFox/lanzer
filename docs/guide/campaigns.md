@@ -49,7 +49,7 @@ forbid Class:not(MethodMember[name="init"])             // no class without one
 Selectors use AST **type** names, which aren't always rule names. `types` lists each type, its properties and what can sit directly inside it:
 
 ```shell
-node ./bin/lox-lanzer.js types ./examples/hello.lanzer
+npx lox-lanzer types ./examples/hello.lanzer
 ```
 `validate` suggests fixes for typos and for `>` that should be `>>`.
 :::

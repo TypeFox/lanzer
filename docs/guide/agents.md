@@ -1,6 +1,6 @@
 # Agents and permissions
 
-Lanzer works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com). Pick one in `.env`:
+Lanzer works with any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com). Pick one in `.env`, which every command reads from the folder you run it in. `--env .env.codex` uses another file instead, and a variable set in your shell always wins:
 
 ::: code-group
 

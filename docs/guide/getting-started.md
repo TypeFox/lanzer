@@ -25,15 +25,15 @@ Check a campaign, look at what the agent will be sent, then run it:
 ::: code-group
 
 ```shell [validate]
-node ./bin/lox-lanzer.js validate ./examples/hello.lanzer
+npx lox-lanzer validate ./examples/hello.lanzer
 ```
 
 ```shell [plan]
-node ./bin/lox-lanzer.js plan ./examples/hello.lanzer --prompt
+npx lox-lanzer plan ./examples/hello.lanzer --prompt
 ```
 
 ```shell [generate]
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer
+npx lox-lanzer generate ./examples/hello.lanzer
 ```
 
 :::
@@ -47,7 +47,7 @@ node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer
 ```
 
 ::: tip
-`validate`, `plan` and `types` never call an agent, so they need no `.env`.
+`validate`, `plan` and `types` never call an agent, so they need no `.env`. The others read `./.env` by themselves; `--env .env.codex` picks another file.
 :::
 
 ## How a run works

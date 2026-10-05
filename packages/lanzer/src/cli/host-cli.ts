@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { describePermissionPolicy, permissiveLanzerPolicy, resolvePermissionPolicy } from '../acp/permissions.js';
 import { isCodexAgent } from '../acp/codex.js';
+import { loadLanzerEnvFile } from './env-file.js';
 import { buildLanzerGenerationJobs, findLanzerGenerationJob } from '../campaign/jobs.js';
 import { loadLanzerDocumentFromFile } from '../campaign/load.js';
 import { resolveLanzerCampaignFile } from '../campaign/resolve.js';
@@ -142,14 +143,23 @@ async function planAction(
  * campaign runner). `validate`, `plan`, `types` and `compare` re-expose the library's actions, so a
  * host ships one tool.
  *
- * ACP transport is configured from the `LANZER_ACP_*` environment variables. Load your `.env` before
- * invoking, e.g. `node --env-file=.env ./bin/<cli>.js generate ...`.
+ * ACP transport is configured from the `LANZER_ACP_*` environment variables. Every command first
+ * loads `./.env` when it exists, or the file `--env` names; variables already set in the shell win
+ * over the file. (Not `--env-file`: Node takes that flag for itself, even after the script name.)
  */
 export function createLanzerHostCli(host: LanzerHostCliOptions): Command {
     const program = new Command();
     program
         .name(host.name)
-        .description(`Run, validate, and plan Lanzer campaigns targeting the ${host.language} grammar.`);
+        .description(`Run, validate, and plan Lanzer campaigns targeting the ${host.language} grammar.`)
+        .option('--env <path>', 'load agent settings from this file instead of ./.env')
+        .hook('preAction', () => {
+            try {
+                loadLanzerEnvFile(program.opts<{ env?: string }>().env);
+            } catch (error) {
+                program.error(error instanceof Error ? error.message : String(error));
+            }
+        });
 
     program
         .command('validate')

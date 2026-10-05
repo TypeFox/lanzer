@@ -15,7 +15,7 @@ Every host CLI has the same commands. The examples use Lox's `lox-lanzer`, run f
 ## generate
 
 ```shell
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer
+npx lox-lanzer generate ./examples/hello.lanzer
 ```
 
 Give it several files or folders and they run as one suite, with one report.

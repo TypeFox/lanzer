@@ -11,7 +11,7 @@ import { createLoxDeps } from './run-campaign.js';
  * the Lox generation policy, the `write-lox` skill, and validation by the Lox campaign runner.
  *
  * ACP transport is configured from the `LANZER_ACP_*` environment variables (see `.env.copy`).
- * Load your `.env` before invoking, e.g. `node --env-file=.env ./bin/lox-lanzer.js generate ...`.
+ * Every command reads `./.env` first, or the file `--env <path>` names.
  */
 export function createLoxLanzerCli(): Command {
     return createLanzerHostCli({

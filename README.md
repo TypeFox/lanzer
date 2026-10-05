@@ -45,7 +45,7 @@ git clone --recurse-submodules https://github.com/TypeFox/lanzer
 cd lanzer && npm install && npm run build
 cd packages/lanzer-lox
 cp .env.copy .env
-node --env-file=.env ./bin/lox-lanzer.js generate ./examples/hello.lanzer
+npx lox-lanzer generate ./examples/hello.lanzer
 ```
 
 ## Documentation
